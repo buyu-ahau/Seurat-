@@ -1,0 +1,13 @@
+celltype,marker_count,primary_markers,secondary_markers,functional_category
+CD4_cells,3,"CD4, CD40LG",CD3D,Helper T cells
+CD8_cells,2,"CD8A, CD8B",,Cytotoxic T cells
+NK_cells,3,"NKG7, GNLY",CD3D,Innate immune cells
+Neutrophils,3,"CXCL8, CSF3R",GOSZ,Innate immune cells
+Macrophages,2,"CD68, CD163",,Innate immune cells
+B_cells,2,"CD19, CD79B",,Adaptive immune cells
+Plasma_cells,3,"JCHAIN, M2B1",CD79A,Antibody secreting cells
+DC_cells,1,HLA-DRA,,Antigen presenting cells
+Epithelial_cells,5,"EPCAM, SFTPC","SFTPA1, SCGB1A1, FOXJ1",Barrier and secretory cells
+Fibroblasts,3,"SPARCL1, BGN",MGP,Stromal cells
+Endothelial_cells,5,"PECAM1, CDH5","VWF, PROX1, CA4",Vascular cells
+Serous_cells,1,LTF,,Secretory cells
