@@ -1,4 +1,63 @@
- Seurat对象注释与分析结果整理
+重新注释结果总结
+📊 注释统计结果
+基本信息:
+
+总细胞数: 35,330
+总基因数: 33,029
+原始cluster数: 20 (0-19)
+最终细胞类型数: 12
+🧬 细胞类型分布详情
+细胞类型	细胞数量	百分比
+CD8_cells	9,450	26.75%
+Plasma_cells	8,141	23.04%
+Macrophages	6,054	17.14%
+Neutrophils	3,359	9.51%
+B_cells	2,226	6.30%
+CD4_cells	1,838	5.20%
+Fibroblasts	1,043	2.95%
+Endothelial_cells	862	2.44%
+DC_cells	832	2.35%
+NK_cells	747	2.11%
+Epithelial_cells	624	1.77%
+Unknown_cells	154	0.44%
+🗂️ Cluster到细胞类型映射
+Code
+Cluster 0 → CD8_cells (6,788 cells)
+Cluster 1 → Plasma_cells (4,217 cells)
+Cluster 2 → Plasma_cells (3,924 cells)
+Cluster 3 → Neutrophils (3,359 cells)
+Cluster 4 → Macrophages (3,212 cells)
+Cluster 5 → Macrophages (2,842 cells)
+Cluster 6 → CD8_cells (2,662 cells)
+Cluster 7 → B_cells (2,065 cells)
+Cluster 8 → CD4_cells (1,838 cells)
+Cluster 9 → Fibroblasts (1,043 cells)
+Cluster 10 → DC_cells (832 cells)
+Cluster 11 → NK_cells (627 cells)
+Cluster 12 → Endothelial_cells (575 cells)
+Cluster 13 → Epithelial_cells (498 cells)
+Cluster 14 → Endothelial_cells (287 cells)
+Cluster 15 → B_cells (161 cells)
+Cluster 16 → Epithelial_cells (126 cells)
+Cluster 17 → NK_cells (120 cells)
+Cluster 18 → Unknown_cells (88 cells)
+Cluster 19 → Unknown_cells (66 cells)
+📁 生成文件
+数据文件:
+
+object_reannotated_final_celltype.qs - 重新注释的Seurat对象
+object_reannotated_final_celltype.rds - 备份格式
+cluster_to_celltype_mapping.csv - 映射关系表
+可视化文件:
+
+celltype_distribution.png - 细胞类型分布图
+umap_by_clusters.png - 按cluster着色的UMAP图
+umap_by_final_celltype.png - 按细胞类型着色的UMAP图
+umap_comparison.png - UMAP对比图
+cluster_celltype_heatmap.png - 交叉表热图
+
+
+Seurat对象注释与分析结果整理
 
 本文件整理了`object_annotated_gene_symbols.qs`的Seurat对象基本信息、元数据字段，以及cluster与celltype注释关系的生成脚本和对应结果。便于后续分析与查阅。
 
