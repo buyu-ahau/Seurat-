@@ -1,0 +1,191 @@
+# 直接运行上面的代码，或者如果您想分步骤：
+
+# 第一步：基本设置
+project_dir <- "/disk192/users_dir/buyu/2025-7-7重新注释结果"
+out_data    <- file.path(project_dir, "analysis_results")
+out_plot    <- file.path(project_dir, "plots")
+out_plot_final <- file.path(project_dir, "final_figures")
+
+# 第二步：加载包
+library(Seurat)
+library(dplyr)
+library(ggplot2)
+library(patchwork)
+library(qs)
+
+# 第三步：加载数据
+seurat_obj <- qread(file.path(project_dir, "object_final_annotated.qs"))
+Idents(seurat_obj) <- "celltype_final"
+
+# 第四步：定义函数和变量
+`%R%` <- function(x, n) { paste(rep(x, n), collapse = "") }
+
+
+
+# 超紧凑版本的函数
+create_compact_dotplot <- function(seurat_obj, genes_list, output_dir) {
+  DefaultAssay(seurat_obj) <- "RNA"
+  Idents(seurat_obj) <- "celltype_final"
+  
+  # 准备基因列表 - 按细胞类型分组
+  genes_by_celltype <- list(
+    "CD4_cells" = c("CD40LG", "CD3D", "CD4"),
+    "CD8_cells" = c("CD8A", "CD8B"),
+    "NK_cells" = c("NKG7", "GNLY", "CD3D"),
+    "Neutrophils" = c("CXCL8", "CSF3R"),
+    "Macrophages" = c("CD163", "CD68"),
+    "B_cells" = c("CD79B", "CD19"),
+    "Plasma_cells" = c("JCHAIN", "CD79A"),
+    "DC_cells" = c("HLA-DRA"),
+    "Epithelial_cells" = c("SFTPC", "SFTPA1", "EPCAM", "SCGB1A1", "FOXJ1"),
+    "Fibroblasts" = c("SPARCL1", "BGN", "MGP"),
+    "Endothelial_cells" = c("CDH5", "PROX1", "CA4", "PECAM1"),
+    "Serous_cells" = c("LTF")
+  )
+  
+  # 扁平化基因列表并检查可用性
+  all_genes <- unlist(genes_by_celltype)
+  names(all_genes) <- NULL
+  available_genes <- intersect(all_genes, rownames(seurat_obj))
+  
+  cat("可用基因:", length(available_genes), "/", length(all_genes), "\n")
+  
+  # 🎨 创建超紧凑版DotPlot
+  p_compact <- DotPlot(
+    object = seurat_obj,
+    features = available_genes,
+    assay = "RNA",
+    scale = TRUE,
+    dot.scale = 6,              # 🔥 稍微减小点的大小
+    col.min = -1,
+    col.max = 2
+  ) +
+    
+    # 🔥 超紧凑主题设置
+    theme_bw() +
+    theme(
+      # 坐标轴设置 - 更紧凑
+      axis.text.x = element_text(
+        angle = 90,
+        hjust = 1, 
+        vjust = 0.5,
+        size = 8,                # 🔥 减小字体
+        color = "black"
+      ),
+      axis.text.y = element_text(
+        size = 8,                # 🔥 减小字体
+        color = "black",
+        face = "italic"
+      ),
+      axis.title.x = element_text(
+        size = 10,               # 🔥 减小标题字体
+        face = "bold",
+        margin = margin(t = 5)   # 🔥 减小边距
+      ),
+      axis.title.y = element_text(
+        size = 10,               # 🔥 减小标题字体
+        face = "bold",
+        margin = margin(r = 5)   # 🔥 减小边距
+      ),
+      
+      # 🔥 图例设置 - 更紧凑
+      legend.position = "bottom",
+      legend.box = "horizontal",
+      legend.margin = margin(t = 5),     # 🔥 减小图例边距
+      legend.title = element_text(size = 9, face = "bold"),  # 🔥 减小字体
+      legend.text = element_text(size = 8),                  # 🔥 减小字体
+      legend.key.size = unit(0.4, "cm"),                     # 🔥 减小图例键大小
+      
+      # 🔥 去掉所有背景网格线
+      panel.grid.major = element_blank(),
+      panel.grid.minor = element_blank(),
+      panel.background = element_rect(fill = "white", color = NA),
+      panel.border = element_rect(color = "black", size = 0.5, fill = NA),  # 🔥 减细边框
+      
+      # 🔥 图表标题 - 更紧凑
+      plot.title = element_text(
+        hjust = 0.5,
+        size = 12,               # 🔥 减小标题字体
+        face = "bold",
+        margin = margin(b = 8)   # 🔥 减小边距
+      ),
+      
+      # 🔥 整体边距 - 大幅减小
+      plot.margin = margin(10, 10, 10, 10),  # 🔥 从20减到10
+      
+      # 🔥 减小轴与刻度的距离
+      axis.ticks.length = unit(0.1, "cm")
+    ) +
+    
+    # 🔥 专业配色方案
+    scale_color_gradient2(
+      low = "blue",
+      mid = "white", 
+      high = "red",
+      midpoint = 0,
+      name = "Avg Expression",
+      guide = guide_colorbar(
+        title.position = "top",
+        title.hjust = 0.5,
+        barwidth = 6,            # 🔥 减小颜色条宽度
+        barheight = 0.6          # 🔥 减小颜色条高度
+      )
+    ) +
+    
+    # 🔥 点大小图例 - 更紧凑
+    guides(
+      size = guide_legend(
+        title = "Percent Expressed",
+        title.position = "top",
+        title.hjust = 0.5,
+        override.aes = list(color = "black"),
+        nrow = 1,
+        keywidth = unit(0.4, "cm"),      # 🔥 减小图例键宽度
+        keyheight = unit(0.4, "cm")      # 🔥 减小图例键高度
+      )
+    ) +
+    
+    # 坐标轴标签
+    labs(
+      title = "Cell Type Marker Gene Expression",
+      x = "Cell Types",
+      y = "Features"
+    )
+  
+  # 🔥 保存更紧凑的版本
+  # PDF版本
+  ggsave(
+    filename = file.path(output_dir, "ultra_compact_dotplot.pdf"),
+    plot = p_compact,
+    device = "pdf",
+    width = 10,                # 🔥 减小宽度从12到10
+    height = 6,                # 🔥 减小高度从8到6
+    useDingbats = FALSE
+  )
+  
+  # PNG版本
+  ggsave(
+    filename = file.path(output_dir, "ultra_compact_dotplot.png"),
+    plot = p_compact,
+    device = "png",
+    width = 10,                # 🔥 减小宽度
+    height = 6,                # 🔥 减小高度
+    dpi = 300,
+    bg = "white"
+  )
+  
+  cat("超紧凑版DotPlot已保存到:", output_dir, "\n")
+  return(p_compact)
+}
+
+# 🚀 立即运行超紧凑版
+cat("创建超紧凑版DotPlot...\n")
+cat("时间:", Sys.time(), "\n")
+cat("用户: buyu-ahau\n")
+cat("=" %R% 50, "\n")
+
+ultra_compact_plot <- create_compact_dotplot(seurat_obj, marker_genes_updated, out_plot_final)
+
+cat("✅ 超紧凑版DotPlot创建完成！\n")
+
+
