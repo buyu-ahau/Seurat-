@@ -1,156 +1,318 @@
-重新注释结果总结
-📊 注释统计结果
-基本信息:
+🧬 单细胞RNA测序数据重新注释项目
+📊 项目概述
+项目名称: 单细胞RNA测序数据细胞类型重新注释
+处理时间: 2025-07-08 09:53:17 UTC
+用户: buyu-ahau
+数据规模: 35,330个细胞，33,029个基因，20个clusters
 
+🎯 重新注释结果
+基本统计信息
 总细胞数: 35,330
 总基因数: 33,029
-原始cluster数: 20 (0-19)
+原始cluster数: 20 (clusters 0-19)
 最终细胞类型数: 12
-🧬 细胞类型分布详情
-细胞类型	细胞数量	百分比
-CD8_cells	9,450	26.75%
-Plasma_cells	8,141	23.04%
-Macrophages	6,054	17.14%
-Neutrophils	3,359	9.51%
-B_cells	2,226	6.30%
-CD4_cells	1,838	5.20%
-Fibroblasts	1,043	2.95%
-Endothelial_cells	862	2.44%
-DC_cells	832	2.35%
-NK_cells	747	2.11%
-Epithelial_cells	624	1.77%
-Unknown_cells	154	0.44%
-🗂️ Cluster到细胞类型映射
-Code
-Cluster 0 → CD8_cells (6,788 cells)
-Cluster 1 → Plasma_cells (4,217 cells)
-Cluster 2 → Plasma_cells (3,924 cells)
-Cluster 3 → Neutrophils (3,359 cells)
-Cluster 4 → Macrophages (3,212 cells)
-Cluster 5 → Macrophages (2,842 cells)
-Cluster 6 → CD8_cells (2,662 cells)
-Cluster 7 → B_cells (2,065 cells)
-Cluster 8 → CD4_cells (1,838 cells)
-Cluster 9 → Fibroblasts (1,043 cells)
-Cluster 10 → DC_cells (832 cells)
-Cluster 11 → NK_cells (627 cells)
-Cluster 12 → Endothelial_cells (575 cells)
-Cluster 13 → Epithelial_cells (498 cells)
-Cluster 14 → Endothelial_cells (287 cells)
-Cluster 15 → B_cells (161 cells)
-Cluster 16 → Epithelial_cells (126 cells)
-Cluster 17 → NK_cells (120 cells)
-Cluster 18 → Unknown_cells (88 cells)
-Cluster 19 → Unknown_cells (66 cells)
-📁 生成文件
-数据文件:
+主要细胞群: CD8_cells (9,450 cells, 26.75%)
+📈 细胞类型分布详情
+排名	细胞类型	细胞数量	百分比	主要来源  clusters
+1	CD8_cells	9,450	26.75%	           0, 6
+2	Plasma_cells	8,141	23.04%	1, 2
+3	Macrophages	6,054	17.14%	4, 5
+4	Neutrophils	3,359	9.51%	3
+5	B_cells	            2,226	6.30%	 7, 15
+6	CD4_cells	1,838	5.20%	            8
+7	Fibroblasts	1,131	3.20%	 9, 18*
+8	Endothelial_cells	862	2.44%	12, 14
+9	DC_cells	           832	2.35%	 10
+10	NK_cells	           747	2.11%	 11, 17
+11	Epithelial_cells	624	1.77%	13, 16
+12	Serous_cells	66	0.19%	19*
+*修正的clusters
 
-object_reannotated_final_celltype.qs - 重新注释的Seurat对象
-object_reannotated_final_celltype.rds - 备份格式
-cluster_to_celltype_mapping.csv - 映射关系表
-可视化文件:
+🗂️ 完整的Cluster到细胞类型映射表
+Cluster	细胞类型	细胞数量	备注
+0	CD8_cells	6,788	最大cluster
+1	Plasma_cells	4,217	
+2	Plasma_cells	3,924	
+3	Neutrophils	3,359	
+4	Macrophages	3,212	
+5	Macrophages	2,842	
+6	CD8_cells	2,662	
+7	B_cells	2,065	
+8	CD4_cells	1,838	
+9	Fibroblasts	1,043	
+10	DC_cells	832	
+11	NK_cells	627	
+12	Endothelial_cells	575	
+13	Epithelial_cells	498	
+14	Endothelial_cells	287	
+15	B_cells	161	
+16	Epithelial_cells	126	
+17	NK_cells	120	
+18	Fibroblasts	88	修正
+19	Serous_cells	66	修正
+🔄 关键修正说明
+Cluster 18: 从 Unknown_cells → Fibroblasts (88 cells)
+Cluster 19: 从 Unknown_cells → Serous_cells (66 cells)
+📁 生成文件列表
+主要数据文件:
 
-celltype_distribution.png - 细胞类型分布图
-umap_by_clusters.png - 按cluster着色的UMAP图
-umap_by_final_celltype.png - 按细胞类型着色的UMAP图
-umap_comparison.png - UMAP对比图
-cluster_celltype_heatmap.png - 交叉表热图
+object_final_annotated.qs - 重新注释后的完整Seurat对象
+celltype_summary_corrected.csv - 细胞类型统计摘要
+cluster2celltype_map_corrected.csv - Cluster到细胞类型映射表
 
 
-Seurat对象注释与分析结果整理
+# 单细胞RNA测序数据重新注释脚本
+# 项目: 细胞类型重新注释 (所有细胞类型名以复数's'结尾)
+# 日期: 2025-07-08
+# 用户: buyu-ahau
+# 
+# 功能描述:
+# 1. 加载已有的Seurat对象
+# 2. 根据预定义映射重新注释细胞类型
+# 3. 修正cluster 18和19的注释
+# 4. 生成统计报告和映射表
+# 5. 保存注释后的对象
 
-本文件整理了`object_annotated_gene_symbols.qs`的Seurat对象基本信息、元数据字段，以及cluster与celltype注释关系的生成脚本和对应结果。便于后续分析与查阅。
-
----
-
-## Seurat对象信息
-
-- 特征数（基因数）：33,029
-- 细胞数：35,330
-- 激活Assay：RNA
-- 计算的降维：pca, pca_RNA, harmony_RNA, tsne, tsne_harmony_RNA, umap, umap_harmony_RNA, tsne3, tsne3_harmony_RNA, umap3, umap3_harmony_RNA
-
----
-
-## 元数据主要字段说明
-
-| 字段名称              | 含义                |
-|----------------------|---------------------|
-| orig.ident           | 原始样本编号        |
-| nCount_RNA           | 每个细胞的RNA计数   |
-| nFeature_RNA         | 每个细胞的特征数   |
-| Groups / group       | 分组信息            |
-| percent.mito         | 线粒体基因比例      |
-| percent.hgb          | 血红蛋白基因比例    |
-| S.Score, G2M.Score   | 细胞周期分数        |
-| Phase                | 细胞周期阶段        |
-| CC.Difference        | 细胞周期分数差      |
-| RNA_snn_res.0.5      | SNN聚类分辨率       |
-| seurat_clusters      | Seurat聚类编号      |
-| celltype             | 细胞类型注释        |
-
----
-
-## R脚本：生成cluster与celltype对应关系表
-
-```r
-# 加载必要的包
 library(qs)
 library(Seurat)
 library(dplyr)
 
-# 定义文件路径
-file_path <- "/disk192/users_dir/buyu/2025-7-7重新注释结果/object_annotated_gene_symbols.qs"
+# ============================================================================
+# 1. 数据加载和基本信息检查
+# ============================================================================
 
-# 读取qs文件
+# 加载原始数据
+file_path <- "/disk192/users_dir/buyu/2025-7-7重新注释结果/object_annotated_gene_symbols.qs"
 sc_object <- qread(file_path)
 
-# 查看Seurat对象基本信息
+cat("=" %R% 50, "\n")
+cat("单细胞数据重新注释开始\n")
+cat("=" %R% 50, "\n")
+
+cat("对象信息:\n")
 print(sc_object)
 
-# 查看元数据字段
-head(sc_object@meta.data)
+# 检查现有的cluster信息
+cat("\n现有cluster分布:\n")
+cluster_dist <- table(sc_object$seurat_clusters)
+print(cluster_dist)
 
-# 查看当前的cluster水平
-levels(Idents(sc_object))
-table(Idents(sc_object))
+cat("\nCluster的唯一值:", sort(unique(as.character(sc_object$seurat_clusters))), "\n")
 
-# 生成cluster与celltype的对应关系表
-annotation_table <- table(sc_object$seurat_clusters, sc_object$celltype)
+# ============================================================================
+# 2. 定义细胞类型映射关系
+# ============================================================================
 
-# 打印表格
-print(annotation_table)
+# 定义完整的cluster到celltype映射
+# 注意: cluster 18和19已根据生物学特征重新定义
+final_map <- c(
+  "0" = "CD8_cells",           # T细胞亚群 - 细胞毒性T细胞
+  "1" = "Plasma_cells",        # B细胞分化产物 - 浆细胞
+  "2" = "Plasma_cells",        # B细胞分化产物 - 浆细胞
+  "3" = "Neutrophils",         # 先天免疫细胞 - 中性粒细胞
+  "4" = "Macrophages",         # 先天免疫细胞 - 巨噬细胞
+  "5" = "Macrophages",         # 先天免疫细胞 - 巨噬细胞
+  "6" = "CD8_cells",           # T细胞亚群 - 细胞毒性T细胞
+  "7" = "B_cells",             # 适应性免疫细胞 - B细胞
+  "8" = "CD4_cells",           # T细胞亚群 - 辅助性T细胞
+  "9" = "Fibroblasts",         # 基质细胞 - 成纤维细胞
+  "10" = "DC_cells",           # 抗原呈递细胞 - 树突状细胞
+  "11" = "NK_cells",           # 先天免疫细胞 - 自然杀伤细胞
+  "12" = "Endothelial_cells",  # 血管细胞 - 内皮细胞
+  "13" = "Epithelial_cells",   # 上皮细胞
+  "14" = "Endothelial_cells",  # 血管细胞 - 内皮细胞
+  "15" = "B_cells",            # 适应性免疫细胞 - B细胞
+  "16" = "Epithelial_cells",   # 上皮细胞
+  "17" = "NK_cells",           # 先天免疫细胞 - 自然杀伤细胞
+  "18" = "Fibroblasts",        # 【修正】基质细胞 - 成纤维细胞
+  "19" = "Serous_cells"        # 【修正】分泌细胞 - 浆液性细胞
+)
 
-# 可选：保存为csv
-write.csv(annotation_table, file = "cluster_celltype_crosstab.csv")
-```
+cat("\n应用的映射关系:\n")
+cat("-" %R% 40, "\n")
+for (i in 1:length(final_map)) {
+  cat(sprintf("Cluster %2s -> %-18s\n", names(final_map)[i], final_map[i]))
+}
+cat("-" %R% 40, "\n")
 
----
+# ============================================================================
+# 3. 验证映射完整性
+# ============================================================================
 
-## 结果示例（annotation_table）
+# 检查所有cluster是否都有映射
+all_clusters <- sort(unique(as.character(sc_object$seurat_clusters)))
+mapped_clusters <- names(final_map)
+missing_clusters <- setdiff(all_clusters, mapped_clusters)
 
-```text
-           B_cell DC_cell Endothelial_cell Epithelial_cell Fibroblast Macrophage Neutrophil NK-T_cell Plasma_cell
-  0             0       0                0               0          0          0          0      6788           0
-  1          4217       0                0               0          0          0          0         0           0
-  2          3924       0                0               0          0          0          0         0           0
-  3             0       0                0               0          0          0       3359         0           0
-  4             0       0                0               0          0       3212          0         0           0
-  5             0       0                0               0          0       2842          0         0           0
-  6             0       0                0               0          0          0          0      2662           0
-  7             0       0                0               0          0          0          0         0        2065
-  8             0       0                0               0          0          0          0      1838           0
-  9             0       0                0               0       1043          0          0         0           0
-  10            0       0                0               0          0        832          0         0           0
-  11            0       0                0               0          0          0          0       627           0
-  12            0       0              575               0          0          0          0         0           0
-  13            0       0                0             498          0          0          0         0           0
-  14            0     287                0               0          0          0          0         0           0
-  15            0       0                0               0          0          0          0         0         161
-  16            0       0                0             126          0          0          0         0           0
-  17            0       0                0               0          0          0          0         0         120
-  18            0       0                0               0         88          0          0         0           0
-  19            0       0                0               0         66          0          0         0           0
-```
+cat("\n映射验证:\n")
+cat("所有cluster:", paste(all_clusters, collapse = ", "), "\n")
+cat("映射的cluster:", paste(mapped_clusters, collapse = ", "), "\n")
 
-> 可根据需要直接用上述R脚本运行，或使用csv文件进行下游分析。
+if (length(missing_clusters) > 0) {
+  cat("❌ 警告: 缺失的cluster:", paste(missing_clusters, collapse = ", "), "\n")
+  stop("请为所有cluster定义映射")
+} else {
+  cat("✅ 所有cluster都有对应的映射\n")
+}
+
+# ============================================================================
+# 4. 执行重新注释
+# ============================================================================
+
+cat("\n正在添加新的细胞类型注释...\n")
+
+# 将cluster转换为字符型
+cluster_char <- as.character(sc_object$seurat_clusters)
+
+# 创建细胞类型向量
+celltype_vector <- final_map[cluster_char]
+
+# 检查映射结果
+cat("映射检查:\n")
+cat("  总细胞数:", length(celltype_vector), "\n")
+cat("  成功映射数:", sum(!is.na(celltype_vector)), "\n")
+cat("  NA数量:", sum(is.na(celltype_vector)), "\n")
+
+if (sum(is.na(celltype_vector)) > 0) {
+  na_clusters <- unique(cluster_char[is.na(celltype_vector)])
+  cat("❌ 导致NA的cluster:", paste(na_clusters, collapse = ", "), "\n")
+  stop("存在未映射的cluster")
+} else {
+  cat("✅ 所有细胞都成功映射\n")
+}
+
+# 直接添加到metadata
+sc_object@meta.data$celltype_final <- celltype_vector
+
+# ============================================================================
+# 5. 验证和统计分析
+# ============================================================================
+
+if ("celltype_final" %in% colnames(sc_object@meta.data)) {
+  cat("✅ 成功添加celltype_final列\n")
+  
+  # 设置新的identity
+  Idents(sc_object) <- "celltype_final"
+  
+  # 统计细胞类型分布
+  cat("\n" %R% "=" %R% 50, "\n")
+  cat("细胞类型分布统计\n")
+  cat("=" %R% 50, "\n")
+  
+  celltype_counts <- table(sc_object@meta.data$celltype_final)
+  celltype_percent <- prop.table(celltype_counts) * 100
+  
+  summary_table <- data.frame(
+    细胞类型 = names(celltype_counts),
+    细胞数量 = as.integer(celltype_counts),
+    百分比 = sprintf("%.2f%%", celltype_percent),
+    stringsAsFactors = FALSE
+  )
+  
+  # 按细胞数量降序排列
+  summary_table <- summary_table[order(summary_table$细胞数量, decreasing = TRUE), ]
+  
+  # 添加排名
+  summary_table$排名 <- 1:nrow(summary_table)
+  summary_table <- summary_table[, c("排名", "细胞类型", "细胞数量", "百分比")]
+  
+  print(summary_table)
+  
+  # cluster到celltype映射表
+  cat("\n" %R% "=" %R% 50, "\n")
+  cat("Cluster到细胞类型映射表\n")
+  cat("=" %R% 50, "\n")
+  
+  cluster_table <- data.frame(
+    Cluster = sort(unique(as.integer(sc_object$seurat_clusters))),
+    细胞类型 = final_map[as.character(sort(unique(sc_object$seurat_clusters)))],
+    细胞数量 = as.vector(table(sc_object$seurat_clusters)[as.character(sort(unique(sc_object$seurat_clusters)))]),
+    stringsAsFactors = FALSE
+  )
+  print(cluster_table)
+  
+  # 验证每个cluster的映射
+  cat("\n验证cluster映射:\n")
+  cat("-" %R% 50, "\n")
+  
+  all_correct <- TRUE
+  for (cluster in sort(unique(as.character(sc_object$seurat_clusters)))) {
+    expected_celltype <- final_map[cluster]
+    actual_celltypes <- unique(sc_object@meta.data$celltype_final[cluster_char == cluster])
+    cluster_count <- sum(cluster_char == cluster)
+    
+    if (length(actual_celltypes) == 1 && actual_celltypes == expected_celltype) {
+      status_icon <- if(cluster %in% c("18", "19")) "🔄" else "✅"
+      cat(sprintf("%s Cluster %2s -> %-18s (%d cells)\n", 
+                  status_icon, cluster, expected_celltype, cluster_count))
+    } else {
+      cat(sprintf("❌ Cluster %s 映射错误\n", cluster))
+      all_correct <- FALSE
+    }
+  }
+  
+  if (all_correct) {
+    cat("-" %R% 50, "\n")
+    cat("✅ 所有cluster映射验证通过\n")
+  }
+
+# ============================================================================
+# 6. 保存结果
+# ============================================================================
+
+  cat("\n" %R% "=" %R% 50, "\n")
+  cat("保存结果文件\n")
+  cat("=" %R% 50, "\n")
+  
+  # 保存更新后的Seurat对象
+  output_path <- "/disk192/users_dir/buyu/2025-7-7重新注释结果/object_final_annotated.qs"
+  qsave(sc_object, output_path)
+  cat("✅ 保存Seurat对象到:", output_path, "\n")
+  
+  # 保存统计表格
+  write.csv(summary_table, file = "celltype_summary_corrected.csv", row.names = FALSE)
+  write.csv(cluster_table, file = "cluster2celltype_map_corrected.csv", row.names = FALSE)
+  cat("✅ 保存统计表格到当前目录\n")
+  
+  # ============================================================================
+  # 7. 生成最终报告
+  # ============================================================================
+  
+  cat("\n" %R% "=" %R% 60, "\n")
+  cat("最终注释报告\n")
+  cat("=" %R% 60, "\n")
+  
+  cat("📅 处理时间:", as.character(Sys.time()), "\n")
+  cat("👤 用户:", "buyu-ahau", "\n")
+  cat("🔢 总细胞数:", format(ncol(sc_object), big.mark = ","), "\n")
+  cat("🧬 总基因数:", format(nrow(sc_object), big.mark = ","), "\n")
+  cat("📊 Cluster数:", length(unique(sc_object$seurat_clusters)), "\n")
+  cat("🏷️  细胞类型数:", length(unique(sc_object@meta.data$celltype_final)), "\n")
+  cat("🥇 最大细胞群:", summary_table$细胞类型[1], 
+      sprintf("(%s cells, %s)", 
+              format(summary_table$细胞数量[1], big.mark = ","),
+              summary_table$百分比[1]), "\n")
+  
+  cat("\n🔄 关键修正:\n")
+  cat("   • Cluster 18: 88 cells  -> Fibroblasts\n")
+  cat("   • Cluster 19: 66 cells  -> Serous_cells\n")
+  
+  cat("\n📂 生成文件:\n")
+  cat("   • object_final_annotated.qs - 完整的注释对象\n")
+  cat("   • celltype_summary_corrected.csv - 细胞类型统计\n")
+  cat("   • cluster2celltype_map_corrected.csv - 映射关系表\n")
+  
+  cat("\n=" %R% 60, "\n")
+  cat("✅ 重新注释成功完成！\n")
+  cat("=" %R% 60, "\n")
+  
+} else {
+  cat("❌ 添加celltype_final列失败\n")
+}
+
+cat("\n🎉 脚本执行完成！\n")
+
+# 自定义字符串重复函数
+`%R%` <- function(x, n) {
+  paste(rep(x, n), collapse = "")
+}
