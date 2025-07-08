@@ -1,46 +1,184 @@
-# 直接运行上面的代码，或者如果您想分步骤：
+🧬 细胞类型最终排名
+排名	细胞类型	细胞数量	百分比
+1	CD8_cells	9,450	26.75%
+2	Plasma_cells	8,141	23.04%
+3	Macrophages	6,054	17.14%
+4	Neutrophils	3,425	9.69%
+5	B_cells	2,226	6.30%
+6	CD4_cells	1,838	5.20%
+7	Fibroblasts	1,131	3.20%
+8	Endothelial_cells	862	2.44%
+9	NK_cells	747	2.11%
+10	Epithelial_cells	624	1.77%
+11	DC_cells	832	2.35%
 
-# 第一步：基本设置
+
+# ==============================================================================
+# 单细胞RNA-seq数据重新注释项目
+# ==============================================================================
+# 项目名称: 单细胞数据重新注释和修正
+# 日期: 2025-01-08
+# 用户: buyu-ahau
+# 目的: 修正细胞类型注释 (Cluster 19: Serous_cells -> Neutrophils)
+# ==============================================================================
+
+# ------------------------------------------------------------------------------
+# 1. 项目设置
+# ------------------------------------------------------------------------------
+
+# 设置工作目录和创建项目结构
 project_dir <- "/disk192/users_dir/buyu/2025-7-7重新注释结果"
-out_data    <- file.path(project_dir, "analysis_results")
-out_plot    <- file.path(project_dir, "plots")
-out_plot_final <- file.path(project_dir, "final_figures")
+out_data    <- file.path(project_dir, "analysis_results")      # 分析结果目录
+out_plot    <- file.path(project_dir, "plots")                # 图片目录
+out_plot_final <- file.path(project_dir, "final_figures")     # 最终图片目录
 
-# 第二步：加载包
-library(Seurat)
-library(dplyr)
-library(ggplot2)
-library(patchwork)
-library(qs)
+# 创建目录（如果不存在）
+dir.create(out_data, showWarnings = FALSE, recursive = TRUE)
+dir.create(out_plot, showWarnings = FALSE, recursive = TRUE)
+dir.create(out_plot_final, showWarnings = FALSE, recursive = TRUE)
 
-# 第三步：加载数据
-seurat_obj <- qread(file.path(project_dir, "object_final_annotated.qs"))
+# ------------------------------------------------------------------------------
+# 2. 加载必需的R包
+# ------------------------------------------------------------------------------
+
+library(Seurat)     # 单细胞分析主包
+library(dplyr)      # 数据操作
+library(ggplot2)    # 绘图
+library(patchwork)  # 图形组合
+library(qs)         # 快速数据存储
+
+# ------------------------------------------------------------------------------
+# 3. 数据加载和验证
+# ------------------------------------------------------------------------------
+
+# 检查可用的.qs文件
+cat("检查可用文件:\n")
+qs_files <- list.files(project_dir, pattern = "\\.qs$", full.names = TRUE)
+for (file in qs_files) {
+  cat("  •", basename(file), "\n")
+}
+
+# 按优先级顺序加载数据
+file_priority <- c(
+  file.path(project_dir, "object_final_annotated.qs"),         # 最终注释版本
+  file.path(project_dir, "object_reannotated_final_celltype.qs"), # 重新注释版本
+  file.path(project_dir, "object_annotated_gene_symbols.qs")   # 基因符号版本
+)
+
+seurat_obj <- NULL
+loaded_file <- NULL
+
+# 尝试加载每个文件
+for (file_path in file_priority) {
+  if (file.exists(file_path)) {
+    cat("尝试加载文件:", basename(file_path), "\n")
+    tryCatch({
+      seurat_obj <- qread(file_path)
+      loaded_file <- file_path
+      cat("成功: 已加载", basename(file_path), "\n")
+      break
+    }, error = function(e) {
+      cat("错误: 加载失败", basename(file_path), ":", e$message, "\n")
+    })
+  }
+}
+
+# 检查是否成功加载数据
+if (is.null(seurat_obj)) {
+  stop("错误: 无法加载任何Seurat对象")
+}
+
+# 验证加载的数据
+cat("已从以下文件加载Seurat对象:", basename(loaded_file), "\n")
+print(seurat_obj)
+
+# 检查celltype_final列是否存在
+if (!"celltype_final" %in% colnames(seurat_obj@meta.data)) {
+  stop("错误: 在元数据中未找到celltype_final列")
+}
+
+# 设置细胞身份
 Idents(seurat_obj) <- "celltype_final"
 
-# 第四步：定义函数和变量
+# ------------------------------------------------------------------------------
+# 4. 数据检查和修正
+# ------------------------------------------------------------------------------
+
+# 检查当前细胞类型分布
+cat("当前细胞类型分布:\n")
+current_table <- table(seurat_obj@meta.data$celltype_final)
+print(current_table)
+
+# 应用修正: Cluster 19 Serous_cells -> Neutrophils
+cat("\n应用修正: Cluster 19 Serous_cells -> Neutrophils\n")
+
+# 查找Serous_cells（应该是Cluster 19）
+serous_cells_idx <- which(seurat_obj@meta.data$celltype_final == "Serous_cells")
+cluster_19_idx <- which(seurat_obj@meta.data$seurat_clusters == 19)
+
+cat("Serous_cells 细胞数:", length(serous_cells_idx), "\n")
+cat("Cluster 19 细胞数:", length(cluster_19_idx), "\n")
+
+# 验证它们是否相同
+if (length(serous_cells_idx) == length(cluster_19_idx) && 
+    all(serous_cells_idx == cluster_19_idx)) {
+  cat("确认: Serous_cells对应Cluster 19\n")
+} else {
+  cat("警告: Serous_cells和Cluster 19不匹配\n")
+}
+
+# 执行修正
+seurat_obj@meta.data$celltype_final[serous_cells_idx] <- "Neutrophils"
+Idents(seurat_obj) <- "celltype_final"
+
+# 检查修正后的分布
+cat("\n修正后的细胞类型分布:\n")
+corrected_table <- table(seurat_obj@meta.data$celltype_final)
+print(corrected_table)
+
+# 计算中性粒细胞组成
+neutrophil_cluster3 <- sum(seurat_obj@meta.data$seurat_clusters == 3)
+neutrophil_cluster19 <- sum(seurat_obj@meta.data$seurat_clusters == 19)
+total_neutrophils <- neutrophil_cluster3 + neutrophil_cluster19
+
+cat("\n中性粒细胞组成详情:\n")
+cat(sprintf("   - Cluster 3:  %d 个细胞 (%.1f%%)\n", 
+            neutrophil_cluster3, neutrophil_cluster3/total_neutrophils*100))
+cat(sprintf("   - Cluster 19: %d 个细胞 (%.1f%%) [已修正]\n", 
+            neutrophil_cluster19, neutrophil_cluster19/total_neutrophils*100))
+cat(sprintf("   - 总计:       %d 个细胞\n", total_neutrophils))
+
+cat("\n修正完成! 数据现在包含11种细胞类型（无Serous_cells）\n")
+
+# ------------------------------------------------------------------------------
+# 5. 点图可视化
+# ------------------------------------------------------------------------------
+
+# 定义辅助函数
 `%R%` <- function(x, n) { paste(rep(x, n), collapse = "") }
 
-
-
-# 超紧凑版本的函数
-create_compact_dotplot <- function(seurat_obj, genes_list, output_dir) {
+# 创建紧凑型点图函数
+create_compact_dotplot_v2 <- function(seurat_obj, output_dir) {
+  # 设置默认分析和身份
   DefaultAssay(seurat_obj) <- "RNA"
   Idents(seurat_obj) <- "celltype_final"
   
-  # 准备基因列表 - 按细胞类型分组
+  cat("\n创建点图中...\n")
+  cat("当前细胞类型:", paste(sort(unique(Idents(seurat_obj))), collapse = ", "), "\n")
+  
+  # 优化的基因列表（已移除Serous_cells相关基因）
   genes_by_celltype <- list(
-    "CD4_cells" = c("CD40LG", "CD3D", "CD4"),
-    "CD8_cells" = c("CD8A", "CD8B"),
-    "NK_cells" = c("NKG7", "GNLY", "CD3D"),
-    "Neutrophils" = c("CXCL8", "CSF3R"),
-    "Macrophages" = c("CD163", "CD68"),
-    "B_cells" = c("CD79B", "CD19"),
-    "Plasma_cells" = c("JCHAIN", "CD79A"),
-    "DC_cells" = c("HLA-DRA"),
-    "Epithelial_cells" = c("SFTPC", "SFTPA1", "EPCAM", "SCGB1A1", "FOXJ1"),
-    "Fibroblasts" = c("SPARCL1", "BGN", "MGP"),
-    "Endothelial_cells" = c("CDH5", "PROX1", "CA4", "PECAM1"),
-    "Serous_cells" = c("LTF")
+    "CD4_cells" = c("CD40LG", "CD3D", "CD4", "IL7R"),           # CD4+ T细胞标记
+    "CD8_cells" = c("CD8A", "CD8B", "CD3D", "GZMA"),           # CD8+ T细胞标记
+    "NK_cells" = c("NKG7", "GNLY", "KLRB1", "NCR1"),           # NK细胞标记
+    "Neutrophils" = c("CXCL8", "CSF3R", "FCGR3B", "S100A8", "S100A9"), # 中性粒细胞标记
+    "Macrophages" = c("CD163", "CD68", "C1QA", "APOE"),        # 巨噬细胞标记
+    "B_cells" = c("CD79B", "CD19", "MS4A1", "CD20"),           # B细胞标记
+    "Plasma_cells" = c("JCHAIN", "CD79A", "IGHG1", "MZB1"),    # 浆细胞标记
+    "DC_cells" = c("HLA-DRA", "CD1C", "FCER1A", "CLEC9A"),     # 树突状细胞标记
+    "Epithelial_cells" = c("SFTPC", "SFTPA1", "EPCAM", "SCGB1A1", "FOXJ1", "KRT8"), # 上皮细胞标记
+    "Fibroblasts" = c("SPARCL1", "BGN", "MGP", "COL1A1", "COL3A1"),     # 成纤维细胞标记
+    "Endothelial_cells" = c("CDH5", "PROX1", "CA4", "PECAM1", "VWF")    # 内皮细胞标记
   )
   
   # 扁平化基因列表并检查可用性
@@ -50,142 +188,288 @@ create_compact_dotplot <- function(seurat_obj, genes_list, output_dir) {
   
   cat("可用基因:", length(available_genes), "/", length(all_genes), "\n")
   
-  # 🎨 创建超紧凑版DotPlot
+  # 显示缺失的基因
+  missing_genes <- setdiff(all_genes, available_genes)
+  if (length(missing_genes) > 0) {
+    cat("缺失基因:", paste(missing_genes, collapse = ", "), "\n")
+  }
+  
+  # 创建超紧凑型点图
   p_compact <- DotPlot(
     object = seurat_obj,
     features = available_genes,
     assay = "RNA",
-    scale = TRUE,
-    dot.scale = 6,              # 🔥 稍微减小点的大小
-    col.min = -1,
-    col.max = 2
+    scale = TRUE,      # 标准化表达量
+    dot.scale = 6,     # 点的大小比例
+    col.min = -1,      # 最小颜色值
+    col.max = 2        # 最大颜色值
   ) +
-    
-    # 🔥 超紧凑主题设置
+    # 应用黑白主题
     theme_bw() +
     theme(
-      # 坐标轴设置 - 更紧凑
+      # X轴文本设置（细胞类型）
       axis.text.x = element_text(
-        angle = 90,
-        hjust = 1, 
-        vjust = 0.5,
-        size = 8,                # 🔥 减小字体
-        color = "black"
+        angle = 90,      # 垂直旋转
+        hjust = 1,       # 水平对齐
+        vjust = 0.5,     # 垂直对齐
+        size = 8,        # 字体大小
+        color = "black"  # 字体颜色
       ),
+      # Y轴文本设置（基因名）
       axis.text.y = element_text(
-        size = 8,                # 🔥 减小字体
-        color = "black",
-        face = "italic"
+        size = 8,        # 字体大小
+        color = "black", # 字体颜色
+        face = "italic"  # 斜体
       ),
+      # X轴标题设置
       axis.title.x = element_text(
-        size = 10,               # 🔥 减小标题字体
-        face = "bold",
-        margin = margin(t = 5)   # 🔥 减小边距
+        size = 10,       # 字体大小
+        face = "bold",   # 粗体
+        margin = margin(t = 5)  # 上边距
       ),
+      # Y轴标题设置
       axis.title.y = element_text(
-        size = 10,               # 🔥 减小标题字体
-        face = "bold",
-        margin = margin(r = 5)   # 🔥 减小边距
+        size = 10,       # 字体大小
+        face = "bold",   # 粗体
+        margin = margin(r = 5)  # 右边距
       ),
-      
-      # 🔥 图例设置 - 更紧凑
-      legend.position = "bottom",
-      legend.box = "horizontal",
-      legend.margin = margin(t = 5),     # 🔥 减小图例边距
-      legend.title = element_text(size = 9, face = "bold"),  # 🔥 减小字体
-      legend.text = element_text(size = 8),                  # 🔥 减小字体
-      legend.key.size = unit(0.4, "cm"),                     # 🔥 减小图例键大小
-      
-      # 🔥 去掉所有背景网格线
+      # 图例设置
+      legend.position = "bottom",        # 图例位置
+      legend.box = "horizontal",         # 水平排列
+      legend.margin = margin(t = 5),     # 图例边距
+      legend.title = element_text(size = 9, face = "bold"),  # 图例标题
+      legend.text = element_text(size = 8),                  # 图例文本
+      legend.key.size = unit(0.4, "cm"),                     # 图例键大小
+      # 移除网格线
       panel.grid.major = element_blank(),
       panel.grid.minor = element_blank(),
+      # 背景设置
       panel.background = element_rect(fill = "white", color = NA),
-      panel.border = element_rect(color = "black", size = 0.5, fill = NA),  # 🔥 减细边框
-      
-      # 🔥 图表标题 - 更紧凑
+      panel.border = element_rect(color = "black", linewidth = 0.5, fill = NA),
+      # 标题设置
       plot.title = element_text(
-        hjust = 0.5,
-        size = 12,               # 🔥 减小标题字体
-        face = "bold",
-        margin = margin(b = 8)   # 🔥 减小边距
+        hjust = 0.5,     # 居中
+        size = 12,       # 字体大小
+        face = "bold",   # 粗体
+        margin = margin(b = 8)  # 下边距
       ),
-      
-      # 🔥 整体边距 - 大幅减小
-      plot.margin = margin(10, 10, 10, 10),  # 🔥 从20减到10
-      
-      # 🔥 减小轴与刻度的距离
+      # 整体边距
+      plot.margin = margin(10, 10, 10, 10),
+      # 刻度线长度
       axis.ticks.length = unit(0.1, "cm")
     ) +
-    
-    # 🔥 专业配色方案
+    # 颜色渐变设置
     scale_color_gradient2(
-      low = "blue",
-      mid = "white", 
-      high = "red",
-      midpoint = 0,
-      name = "Avg Expression",
+      low = "blue",      # 低表达颜色
+      mid = "white",     # 中等表达颜色
+      high = "red",      # 高表达颜色
+      midpoint = 0,      # 中点值
+      name = "平均表达量",
       guide = guide_colorbar(
-        title.position = "top",
-        title.hjust = 0.5,
-        barwidth = 6,            # 🔥 减小颜色条宽度
-        barheight = 0.6          # 🔥 减小颜色条高度
+        title.position = "top",    # 标题位置
+        title.hjust = 0.5,         # 标题居中
+        barwidth = 6,              # 颜色条宽度
+        barheight = 0.6            # 颜色条高度
       )
     ) +
-    
-    # 🔥 点大小图例 - 更紧凑
+    # 点大小图例设置
     guides(
       size = guide_legend(
-        title = "Percent Expressed",
+        title = "表达百分比",
         title.position = "top",
         title.hjust = 0.5,
         override.aes = list(color = "black"),
         nrow = 1,
-        keywidth = unit(0.4, "cm"),      # 🔥 减小图例键宽度
-        keyheight = unit(0.4, "cm")      # 🔥 减小图例键高度
+        keywidth = unit(0.4, "cm"),
+        keyheight = unit(0.4, "cm")
       )
     ) +
-    
     # 坐标轴标签
     labs(
-      title = "Cell Type Marker Gene Expression",
-      x = "Cell Types",
-      y = "Features"
+      title = "细胞类型标记基因表达模式 (修正版 v2)",
+      x = "细胞类型",
+      y = "标记基因"
     )
   
-  # 🔥 保存更紧凑的版本
-  # PDF版本
+  # 保存图片文件
+  # PDF格式（矢量图，适合发表）
   ggsave(
-    filename = file.path(output_dir, "ultra_compact_dotplot.pdf"),
+    filename = file.path(output_dir, "ultra_compact_dotplot_corrected.pdf"),
     plot = p_compact,
     device = "pdf",
-    width = 10,                # 🔥 减小宽度从12到10
-    height = 6,                # 🔥 减小高度从8到6
+    width = 10,        # 宽度（英寸）
+    height = 6,        # 高度（英寸）
     useDingbats = FALSE
   )
   
-  # PNG版本
+  # PNG格式（位图，适合展示）
   ggsave(
-    filename = file.path(output_dir, "ultra_compact_dotplot.png"),
+    filename = file.path(output_dir, "ultra_compact_dotplot_corrected.png"),
     plot = p_compact,
     device = "png",
-    width = 10,                # 🔥 减小宽度
-    height = 6,                # 🔥 减小高度
+    width = 10,
+    height = 6,
+    dpi = 300,         # 分辨率
+    bg = "white"       # 背景颜色
+  )
+  
+  # TIFF格式（高质量位图，适合发表）
+  ggsave(
+    filename = file.path(output_dir, "ultra_compact_dotplot_corrected.tiff"),
+    plot = p_compact,
+    device = "tiff",
+    width = 10,
+    height = 6,
     dpi = 300,
     bg = "white"
   )
   
-  cat("超紧凑版DotPlot已保存到:", output_dir, "\n")
+  cat("点图已保存到:", output_dir, "\n")
   return(p_compact)
 }
 
-# 🚀 立即运行超紧凑版
-cat("创建超紧凑版DotPlot...\n")
+# 运行点图创建
+cat("\n", paste(rep("=", 50), collapse = ""), "\n")
+cat("创建修正版点图中...\n")
 cat("时间:", Sys.time(), "\n")
 cat("用户: buyu-ahau\n")
-cat("=" %R% 50, "\n")
+cat(paste(rep("=", 50), collapse = ""), "\n")
 
-ultra_compact_plot <- create_compact_dotplot(seurat_obj, marker_genes_updated, out_plot_final)
+# 执行点图创建函数
+ultra_compact_plot_corrected <- create_compact_dotplot_v2(seurat_obj, out_plot_final)
 
-cat("✅ 超紧凑版DotPlot创建完成！\n")
+# ------------------------------------------------------------------------------
+# 6. 保存结果
+# ------------------------------------------------------------------------------
 
+# 保存修正后的Seurat对象
+cat("\n保存修正后的Seurat对象...\n")
+corrected_file <- file.path(project_dir, "object_final_annotated_corrected_v2.qs")
+qsave(seurat_obj, corrected_file)
+cat("成功: 修正后的Seurat对象已保存为:", basename(corrected_file), "\n")
+
+# 保存细胞类型统计表
+cat("\n保存细胞类型统计表...\n")
+corrected_stats <- data.frame(
+  Cell_Type = names(corrected_table),                                    # 细胞类型名称
+  Cell_Count = as.integer(corrected_table),                              # 细胞数量
+  Percentage = round(as.numeric(corrected_table)/sum(corrected_table)*100, 2), # 百分比
+  stringsAsFactors = FALSE
+)
+# 按细胞数量降序排列
+corrected_stats <- corrected_stats[order(corrected_stats$Cell_Count, decreasing = TRUE), ]
+corrected_stats$Rank <- 1:nrow(corrected_stats)  # 添加排名
+corrected_stats <- corrected_stats[, c("Rank", "Cell_Type", "Cell_Count", "Percentage")]
+
+# 保存为CSV文件
+write.csv(corrected_stats, 
+          file = file.path(project_dir, "celltype_statistics_corrected_v2.csv"), 
+          row.names = FALSE)
+cat("成功: 统计表已保存为: celltype_statistics_corrected_v2.csv\n")
+
+# 保存集群映射表
+cat("\n保存集群映射表...\n")
+# 修正后的集群到细胞类型映射
+final_map_corrected <- c(
+  "0" = "CD8_cells", "1" = "Plasma_cells", "2" = "Plasma_cells",
+  "3" = "Neutrophils", "4" = "Macrophages", "5" = "Macrophages",
+  "6" = "CD8_cells", "7" = "B_cells", "8" = "CD4_cells",
+  "9" = "Fibroblasts", "10" = "DC_cells", "11" = "NK_cells",
+  "12" = "Endothelial_cells", "13" = "Epithelial_cells",
+  "14" = "Endothelial_cells", "15" = "B_cells", "16" = "Epithelial_cells",
+  "17" = "NK_cells", "18" = "Fibroblasts", "19" = "Neutrophils"  # 关键修正
+)
+
+# 创建映射数据框
+cluster_mapping_df <- data.frame(
+  Cluster = names(final_map_corrected),                                   # 集群编号
+  Cell_Type = as.character(final_map_corrected),                         # 细胞类型
+  Cell_Count = as.integer(table(seurat_obj@meta.data$seurat_clusters)[names(final_map_corrected)]), # 细胞数量
+  Status = ifelse(names(final_map_corrected) == "19", "已修正", "原始"), # 状态标记
+  stringsAsFactors = FALSE
+)
+
+# 保存映射表
+write.csv(cluster_mapping_df, 
+          file = file.path(project_dir, "cluster_to_celltype_mapping_corrected_v2.csv"), 
+          row.names = FALSE)
+cat("成功: 集群映射表已保存为: cluster_to_celltype_mapping_corrected_v2.csv\n")
+
+# 生成修正报告
+cat("\n生成修正报告...\n")
+report_file <- file.path(project_dir, "correction_report_v2.txt")
+report_content <- paste(
+  "=======================================================",
+  "单细胞数据重新注释修正报告",
+  "=======================================================",
+  "",
+  paste("日期:", Sys.time()),
+  paste("用户: buyu-ahau"),
+  paste("原始文件: object_final_annotated.qs"),
+  paste("修正文件: object_final_annotated_corrected_v2.qs"),
+  "",
+  "应用的修正:",
+  "- Cluster 19: Serous_cells -> Neutrophils",
+  "- 66个细胞从Serous_cells重新分类为Neutrophils",
+  "",
+  "最终结果:",
+  paste("- 总细胞数:", format(ncol(seurat_obj), big.mark = ",")),
+  paste("- 总基因数:", format(nrow(seurat_obj), big.mark = ",")),
+  paste("- 细胞类型数: 11 (移除了Serous_cells)"),
+  "",
+  "中性粒细胞组成:",
+  paste("- Cluster 3:", neutrophil_cluster3, "个细胞 (98.1%)"),
+  paste("- Cluster 19:", neutrophil_cluster19, "个细胞 (1.9%) [已修正]"),
+  paste("- 总计:", total_neutrophils, "个细胞"),
+  "",
+  "生成的文件:",
+  "- object_final_annotated_corrected_v2.qs",
+  "- celltype_statistics_corrected_v2.csv",
+  "- cluster_to_celltype_mapping_corrected_v2.csv",
+  "- ultra_compact_dotplot_corrected.pdf/png/tiff",
+  "- correction_report_v2.txt",
+  "",
+  "=======================================================",
+  "修正成功完成!",
+  "=======================================================",
+  sep = "\n"
+)
+
+# 写入报告文件
+writeLines(report_content, report_file)
+cat("成功: 修正报告已保存为:", basename(report_file), "\n")
+
+# ------------------------------------------------------------------------------
+# 7. 最终确认
+# ------------------------------------------------------------------------------
+
+cat("\n", paste(rep("=", 60), collapse = ""), "\n")
+cat("最终确认 - 修正已成功保存\n")
+cat(paste(rep("=", 60), collapse = ""), "\n")
+cat("日期:", Sys.time(), "\n")
+cat("用户: buyu-ahau\n")
+cat("状态: 已完成\n")
+cat("\n生成的文件:\n")
+cat("1. object_final_annotated_corrected_v2.qs - 修正后的Seurat对象\n")
+cat("2. celltype_statistics_corrected_v2.csv - 细胞类型统计表\n")
+cat("3. cluster_to_celltype_mapping_corrected_v2.csv - 集群映射表\n")
+cat("4. ultra_compact_dotplot_corrected.pdf/png/tiff - 点图可视化文件\n")
+cat("5. correction_report_v2.txt - 详细修正报告\n")
+cat(paste(rep("=", 60), collapse = ""), "\n")
+
+# ==============================================================================
+# 脚本结束
+# ==============================================================================
+
+# 可选: 显示最终的细胞类型分布
+cat("\n最终细胞类型分布总结:\n")
+final_summary <- data.frame(
+  排名 = 1:nrow(corrected_stats),
+  细胞类型 = corrected_stats$Cell_Type,
+  细胞数量 = corrected_stats$Cell_Count,
+  百分比 = paste0(corrected_stats$Percentage, "%")
+)
+print(final_summary)
+
+cat("\n🎉 项目完成! 所有文件已保存到:", project_dir, "\n")
 
