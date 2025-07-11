@@ -1,0 +1,59 @@
+# 1. 加载R包
+suppressMessages({
+  library(Seurat)
+  library(qs)
+  library(ggplot2)
+  library(patchwork)
+  library(dplyr)
+})
+
+# 2. 设置路径
+data_dir <- "~/2025-7-7重新注释结果"
+setwd(data_dir)
+
+# 3. 读取Seurat对象
+seurat_file <- file.path(data_dir, "object_final_annotated_corrected_v2.qs")
+seurat_obj <- qread(seurat_file)
+DefaultAssay(seurat_obj) <- "RNA"
+Idents(seurat_obj) <- "celltype_final"
+
+# 检查
+print(dim(seurat_obj))
+print(table(seurat_obj@meta.data$celltype_final))
+
+# 推荐marker基因，可以根据你的细胞类型实际情况调整
+key_marker_genes <- c(
+  "CD8A", "CD4", "NKG7", "S100A8", "CD68", "CD19", 
+  "JCHAIN", "HLA-DRA", "EPCAM", "COL1A1", "PECAM1"
+)
+
+available_genes <- intersect(key_marker_genes, rownames(seurat_obj))
+print(available_genes)
+
+# 绘制
+p_feature <- FeaturePlot(
+  seurat_obj,
+  features = available_genes,
+  reduction = "umap",
+  pt.size = 0.08,   # 小点
+  order = TRUE,
+  cols = c("grey90", "red"),
+  raster = FALSE
+) &
+  theme_void() &
+  theme(
+    plot.title = element_text(size = 13, face = "bold"),
+    legend.position = "right",
+    legend.title = element_text(size = 9),
+    legend.text = element_text(size = 8)
+  )
+
+# 保存
+output_dir <- file.path(data_dir, "single_cell_final_analysis/05_visualizations/corrected_visualizations")
+dir.create(output_dir, showWarnings = FALSE, recursive = TRUE)
+
+ggsave(
+  filename = file.path(output_dir, "marker_genes_feature_plot.pdf"),
+  plot = p_feature,
+  width = 16, height = 12
+)
