@@ -1,0 +1,82 @@
+# ==== 配置并行环境 ====
+library(future.apply)
+plan(multisession, workers = 48)  # 建议先用48核（500G内存很充裕），如需更快可改为64
+
+# ==== 列出所有细胞类型 ====
+library(qs)
+seurat_obj <- qread("/disk192/users_dir/buyu/2025-7-7重新注释结果/object_final_annotated_corrected_v2.qs")
+celltypes <- unique(seurat_obj$celltype_final)
+rm(seurat_obj)  # 释放内存，此后每worker单独加载
+
+main_dir <- "/disk192/users_dir/buyu/2025-7-7重新注释结果/monocle3"
+
+# ==== 并行批量分析 ====
+future_lapply(celltypes, function(ct) {
+  # 每个worker加载全部依赖包
+  library(qs)
+  library(Seurat)
+  library(monocle3)
+  library(SeuratWrappers)
+  library(ggplot2)
+  
+  # 读取Seurat对象并转CDS
+  seurat_obj <- qread("/disk192/users_dir/buyu/2025-7-7重新注释结果/object_final_annotated_corrected_v2.qs")
+  cds <- as.cell_data_set(seurat_obj)
+  colData(cds)$celltype_final <- seurat_obj$celltype_final
+  rm(seurat_obj)
+  
+  out_dir <- file.path(main_dir, paste0("root_", ct))
+  if (!dir.exists(out_dir)) dir.create(out_dir, recursive = TRUE)
+  
+  root_cells <- colnames(cds)[colData(cds)$celltype_final == ct]
+  if (length(root_cells) == 0) return(NULL)
+  
+  # Monocle3主流程
+  cds_tmp <- cds
+  cds_tmp <- preprocess_cds(cds_tmp, num_dim = 50)
+  cds_tmp <- reduce_dimension(cds_tmp, reduction_method = "UMAP", preprocess_method = "PCA")
+  cds_tmp <- cluster_cells(cds_tmp)
+  cds_tmp <- learn_graph(cds_tmp)
+  
+  # 只分析主分区
+  partition_tab <- table(partitions(cds_tmp))
+  main_partition <- names(sort(partition_tab, decreasing = TRUE))[1]
+  cds_tmp <- cds_tmp[, partitions(cds_tmp) == main_partition]
+  root_cells_main <- intersect(root_cells, colnames(cds_tmp))
+  if (length(root_cells_main) == 0) return(NULL)
+  cds_tmp <- order_cells(cds_tmp, root_cells = root_cells_main)
+  
+  # 只显示主分支
+  p1 <- plot_cells(
+    cds_tmp,
+    color_cells_by = "pseudotime",
+    label_groups_by_cluster = FALSE,
+    label_leaves = FALSE,
+    label_branch_points = TRUE
+  )
+  ggsave(filename = file.path(out_dir, paste0("trajectory_pseudotime_mainbranch_", ct, ".png")),
+         plot = p1, width = 8, height = 6, dpi = 300)
+  
+  p2 <- plot_cells(
+    cds_tmp,
+    color_cells_by = "celltype_final",
+    label_groups_by_cluster = FALSE,
+    label_leaves = FALSE,
+    label_branch_points = TRUE
+  )
+  ggsave(filename = file.path(out_dir, paste0("trajectory_celltype_mainbranch_", ct, ".png")),
+         plot = p2, width = 8, height = 6, dpi = 300)
+  
+  # 保存伪时序结果表
+  pseudotime_df <- data.frame(cell = names(cds_tmp@principal_graph_aux$UMAP$pseudotime),
+                              pseudotime = cds_tmp@principal_graph_aux$UMAP$pseudotime)
+  write.csv(pseudotime_df, file = file.path(out_dir, paste0("pseudotime_mainbranch_", ct, ".csv")), row.names = FALSE)
+  
+  # 差异表达分析
+  deg_res <- graph_test(cds_tmp, neighbor_graph = "principal_graph", cores = 4)
+  write.csv(as.data.frame(deg_res), file = file.path(out_dir, paste0("deg_graph_test_mainbranch_", ct, ".csv")))
+  
+  return(NULL)
+})
+
+plan(sequential) # 结束后恢复单线程
