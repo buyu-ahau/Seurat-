@@ -13,14 +13,63 @@
 11	DC_cells	832	2.35%
 
 
-# ==============================================================================
-# 2.2 Modified Enhanced DotPlot with Border and Vertical Text
-# ==============================================================================
+# 定义输出目录
+out_plot_final <- "/disk192/users_dir/buyu/2025-7-7重新注释结果/final_figures"
+dir.create(out_plot_final, recursive = TRUE, showWarnings = FALSE)
 
-cat("Generating modified DotPlot with border and vertical text...\n")
+# 保存
+ggsave(
+  filename = file.path(out_plot_final, "final_dotplot_bordered.pdf"),
+  plot = p_dot_final,
+  width = 16, height = 9,
+  useDingbats = FALSE
+)
+ggsave(
+  filename = file.path(out_plot_final, "final_dotplot_bordered.png"),
+  plot = p_dot_final,
+  width = 16, height = 9, dpi = 300, bg = "white"
+)
+ggsave(
+  filename = file.path(out_plot_final, "final_dotplot_bordered.tiff"),
+  plot = p_dot_final,
+  width = 16, height = 9, dpi = 300, bg = "white"
+)
+cat("Generating DotPlot for final 11 cell types...\n")
 
-# Create modified enhanced DotPlot
-p_dot_modified <- DotPlot(
+# 1. 定义细胞类型顺序
+final_celltypes <- c(
+  "CD8_cells", "Plasma_cells", "Macrophages", "Neutrophils", "B_cells",
+  "CD4_cells", "Fibroblasts", "Endothelial_cells", "NK_cells",
+  "Epithelial_cells", "DC_cells"
+)
+
+# 2. 设定Seurat对象身份
+Idents(seurat_obj) <- factor(seurat_obj$celltype_final, levels = final_celltypes)
+
+# 3. 定义marker基因
+marker_genes <- c(
+  "CD8A", "CD8B",
+  "JCHAIN", "MZB1",
+  "CD68", "CD163",
+  "CSF3R", "CXCL8",
+  "CD19", "CD79B",
+  "CD4", "CD3D",
+  "BGN", "MGP",
+  "PECAM1", "CDH5",
+  "NKG7", "GNLY",
+  "EPCAM", "SFTPC",
+  "HLA-DRA"
+)
+
+# 4. 检查可用基因
+available_genes <- marker_genes[marker_genes %in% rownames(seurat_obj)]
+if(length(available_genes) != length(marker_genes)){
+  cat("⚠️ 有缺失marker基因，将自动跳过不存在的基因：\n")
+  cat(setdiff(marker_genes, available_genes), "\n")
+}
+
+# 5. 绘图
+p_dot_final <- DotPlot(
   seurat_obj,
   features = available_genes,
   scale = TRUE,
@@ -28,58 +77,37 @@ p_dot_modified <- DotPlot(
   col.min = -2,
   col.max = 2
 ) +
-  theme_bw() +  # Use theme_bw for border
+  theme_bw() +
   theme(
-    # X-axis text (cell types) - vertical
     axis.text.x = element_text(
-      angle = 90,           # Vertical text
-      hjust = 1,            # Right alignment
-      vjust = 0.5,          # Center vertically
-      size = 11,            # Font size
-      face = "bold"         # Bold font
+      angle = 90, hjust = 1, vjust = 0.5, size = 11, face = "bold"
     ),
-    # Y-axis text (genes) - italic
     axis.text.y = element_text(
-      size = 10, 
-      face = "italic"
+      size = 10, face = "italic"
     ),
-    # Axis titles
     axis.title = element_text(
-      size = 12, 
-      face = "bold"
+      size = 12, face = "bold"
     ),
-    # Legend position and style
     legend.position = "bottom",
     legend.box = "horizontal",
     legend.title = element_text(
-      size = 10, 
-      face = "bold"
+      size = 10, face = "bold"
     ),
     legend.text = element_text(size = 8),
-    # Plot title
     plot.title = element_text(
-      hjust = 0.5, 
-      size = 14, 
-      face = "bold"
+      hjust = 0.5, size = 14, face = "bold"
     ),
-    # Panel styling with border
     panel.border = element_rect(
-      color = "black", 
-      fill = NA, 
-      size = 1
+      color = "black", fill = NA, linewidth = 1
     ),
     panel.grid.major = element_line(
-      color = "grey90", 
-      size = 0.5
+      color = "grey90", linewidth = 0.5
     ),
     panel.grid.minor = element_blank(),
-    # Plot margins
     plot.margin = margin(15, 15, 15, 15)
   ) +
   scale_color_gradient2(
-    low = "blue", 
-    mid = "white", 
-    high = "red",
+    low = "blue", mid = "white", high = "red",
     name = "Average\nExpression"
   ) +
   guides(
@@ -97,40 +125,38 @@ p_dot_modified <- DotPlot(
     )
   ) +
   labs(
-    title = "Cell Type Marker Gene Expression Pattern (Corrected)",
+    title = "Cell Type Marker Gene Expression Pattern (Final Ranking)",
     x = "Cell Types",
     y = "Marker Genes"
   )
 
-# Save modified DotPlot
+# 6. 定义保存目录
+new_viz_dir <- out_plot_final   # 或自定义目录
+dir.create(new_viz_dir, recursive = TRUE, showWarnings = FALSE)
+
+# 7. 保存
 ggsave(
-  filename = file.path(new_viz_dir, "enhanced_dotplot_bordered.pdf"),
-  plot = p_dot_modified,
+  filename = file.path(new_viz_dir, "final_dotplot_bordered.pdf"),
+  plot = p_dot_final,
   width = 16, height = 9,
   useDingbats = FALSE
 )
-
 ggsave(
-  filename = file.path(new_viz_dir, "enhanced_dotplot_bordered.png"),
-  plot = p_dot_modified,
-  width = 16, height = 9,
-  dpi = 300, bg = "white"
+  filename = file.path(new_viz_dir, "final_dotplot_bordered.png"),
+  plot = p_dot_final,
+  width = 16, height = 9, dpi = 300, bg = "white"
+)
+ggsave(
+  filename = file.path(new_viz_dir, "final_dotplot_bordered.tiff"),
+  plot = p_dot_final,
+  width = 16, height = 9, dpi = 300, bg = "white"
 )
 
-ggsave(
-  filename = file.path(new_viz_dir, "enhanced_dotplot_bordered.tiff"),
-  plot = p_dot_modified,
-  width = 16, height = 9,
-  dpi = 300, bg = "white"
-)
-
-cat("Modified DotPlot with border and vertical text saved successfully!\n")
+cat("DotPlot for final 11 cell types saved successfully!\n")
 cat("Files generated:\n")
-cat("- enhanced_dotplot_bordered.pdf\n")
-cat("- enhanced_dotplot_bordered.png\n")
-cat("- enhanced_dotplot_bordered.tiff\n")
+cat("- final_dotplot_bordered.pdf\n")
+cat("- final_dotplot_bordered.png\n")
+cat("- final_dotplot_bordered.tiff\n")
 cat(paste(rep("=", 60), collapse = ""), "\n")
 
-# Display the modified plot
-print(p_dot_modified)
-
+print(p_dot_final)
