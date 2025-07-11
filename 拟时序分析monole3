@@ -1,25 +1,24 @@
-# ==== 配置并行环境 ====
+# ==== 并行环境设置 ====
 library(future.apply)
-plan(multisession, workers = 48)  # 建议先用48核（500G内存很充裕），如需更快可改为64
+plan(multisession, workers = 48)  # 建议用48核并发
 
-# ==== 列出所有细胞类型 ====
+# 获取所有细胞类型
 library(qs)
 seurat_obj <- qread("/disk192/users_dir/buyu/2025-7-7重新注释结果/object_final_annotated_corrected_v2.qs")
 celltypes <- unique(seurat_obj$celltype_final)
-rm(seurat_obj)  # 释放内存，此后每worker单独加载
+rm(seurat_obj)
 
-main_dir <- "/disk192/users_dir/buyu/2025-7-7重新注释结果/monocle3"
+main_dir <- "/disk192/users_dir/buyu/2025-7-7重新注释结果/monocle3_pretty"
 
-# ==== 并行批量分析 ====
+# ==== 并行分析每个celltype为起点 ====
 future_lapply(celltypes, function(ct) {
-  # 每个worker加载全部依赖包
   library(qs)
   library(Seurat)
   library(monocle3)
   library(SeuratWrappers)
   library(ggplot2)
+  library(igraph)
   
-  # 读取Seurat对象并转CDS
   seurat_obj <- qread("/disk192/users_dir/buyu/2025-7-7重新注释结果/object_final_annotated_corrected_v2.qs")
   cds <- as.cell_data_set(seurat_obj)
   colData(cds)$celltype_final <- seurat_obj$celltype_final
@@ -27,56 +26,59 @@ future_lapply(celltypes, function(ct) {
   
   out_dir <- file.path(main_dir, paste0("root_", ct))
   if (!dir.exists(out_dir)) dir.create(out_dir, recursive = TRUE)
+  message(paste0("分析起点: ", ct))
   
-  root_cells <- colnames(cds)[colData(cds)$celltype_final == ct]
-  if (length(root_cells) == 0) return(NULL)
+  # 聚类 & 轨迹学习
+  cds <- cluster_cells(cds, cluster_method = 'louvain')
+  cds <- learn_graph(cds, use_partition = TRUE, verbose = TRUE,
+                     learn_graph_control = list(minimal_branch_len = 10))
   
-  # Monocle3主流程
-  cds_tmp <- cds
-  cds_tmp <- preprocess_cds(cds_tmp, num_dim = 50)
-  cds_tmp <- reduce_dimension(cds_tmp, reduction_method = "UMAP", preprocess_method = "PCA")
-  cds_tmp <- cluster_cells(cds_tmp)
-  cds_tmp <- learn_graph(cds_tmp)
+  # 确定当前celltype为起点最近的主轨迹节点
+  start_cells <- colnames(cds)[colData(cds)$celltype_final == ct]
+  if (length(start_cells) == 0) return(NULL)
+  closest_vertex <- cds@principal_graph_aux[["UMAP"]]$pr_graph_cell_proj_closest_vertex
+  closest_vertex <- as.matrix(closest_vertex[colnames(cds), ])
+  root_pr_nodes <- igraph::V(principal_graph(cds)[["UMAP"]])$name
+  flag <- closest_vertex[start_cells, ]
+  flag <- as.numeric(names(which.max(table(flag))))
+  root_pr_nodes <- root_pr_nodes[flag]
+  cds <- order_cells(cds, root_pr_nodes = root_pr_nodes)
   
-  # 只分析主分区
-  partition_tab <- table(partitions(cds_tmp))
-  main_partition <- names(sort(partition_tab, decreasing = TRUE))[1]
-  cds_tmp <- cds_tmp[, partitions(cds_tmp) == main_partition]
-  root_cells_main <- intersect(root_cells, colnames(cds_tmp))
-  if (length(root_cells_main) == 0) return(NULL)
-  cds_tmp <- order_cells(cds_tmp, root_cells = root_cells_main)
-  
-  # 只显示主分支
-  p1 <- plot_cells(
-    cds_tmp,
+  # 美观轨迹图
+  p <- plot_cells(
+    cds,
     color_cells_by = "pseudotime",
+    label_cell_groups = FALSE,
     label_groups_by_cluster = FALSE,
+    label_roots = FALSE,
     label_leaves = FALSE,
-    label_branch_points = TRUE
+    label_branch_points = FALSE,
+    cell_size = 0.5,
+    group_label_size = 3,
+    rasterize = FALSE
   )
-  ggsave(filename = file.path(out_dir, paste0("trajectory_pseudotime_mainbranch_", ct, ".png")),
-         plot = p1, width = 8, height = 6, dpi = 300)
+  pdf_file <- file.path(out_dir, paste0("Pseudotime_umap_", ct, ".pdf"))
+  ggsave(p, filename = pdf_file, width = 5.5, height = 4)
   
-  p2 <- plot_cells(
-    cds_tmp,
-    color_cells_by = "celltype_final",
-    label_groups_by_cluster = FALSE,
-    label_leaves = FALSE,
-    label_branch_points = TRUE
-  )
-  ggsave(filename = file.path(out_dir, paste0("trajectory_celltype_mainbranch_", ct, ".png")),
-         plot = p2, width = 8, height = 6, dpi = 300)
+  # 拟时序数据导出
+  time <- monocle3::pseudotime(cds)
+  time[is.infinite(time)] <- 0
+  time_df <- data.frame(cell = names(time), pseudotime = time)
+  write.table(time_df, file = file.path(out_dir, "pseudotime_data.txt"),
+              sep = "\t", quote = FALSE, col.names = TRUE, row.names = FALSE)
   
-  # 保存伪时序结果表
-  pseudotime_df <- data.frame(cell = names(cds_tmp@principal_graph_aux$UMAP$pseudotime),
-                              pseudotime = cds_tmp@principal_graph_aux$UMAP$pseudotime)
-  write.csv(pseudotime_df, file = file.path(out_dir, paste0("pseudotime_mainbranch_", ct, ".csv")), row.names = FALSE)
+  # 保存对象
+  saveRDS(cds, file = file.path(out_dir, "monocle3_result.rds"))
+  # 若需要Seurat对象也保存，可重新读取并存
+  seurat_obj2 <- qread("/disk192/users_dir/buyu/2025-7-7重新注释结果/object_final_annotated_corrected_v2.qs")
+  saveRDS(seurat_obj2, file = file.path(out_dir, "seurat_processed_data.rds"))
+  rm(seurat_obj2)
   
-  # 差异表达分析
-  deg_res <- graph_test(cds_tmp, neighbor_graph = "principal_graph", cores = 4)
-  write.csv(as.data.frame(deg_res), file = file.path(out_dir, paste0("deg_graph_test_mainbranch_", ct, ".csv")))
+  # 差异分析
+  deg_res <- graph_test(cds, neighbor_graph = "principal_graph", cores = 4)
+  write.csv(as.data.frame(deg_res), file = file.path(out_dir, paste0("deg_graph_test_", ct, ".csv")))
   
   return(NULL)
 })
 
-plan(sequential) # 结束后恢复单线程
+plan(sequential)
