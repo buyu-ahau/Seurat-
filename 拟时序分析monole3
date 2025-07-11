@@ -1,41 +1,43 @@
-# ==== 并行环境设置 ====
-library(future.apply)
-plan(multisession, workers = 48)  # 建议用48核并发
-
-# 获取所有细胞类型
+####严禁多线程（炸内存）
 library(qs)
-seurat_obj <- qread("/disk192/users_dir/buyu/2025-7-7重新注释结果/object_final_annotated_corrected_v2.qs")
+library(Seurat)
+library(monocle3)
+library(SeuratWrappers)
+library(ggplot2)
+library(igraph)
+
+# 配置路径
+seurat_path <- "/disk192/users_dir/buyu/2025-7-7重新注释结果/object_final_annotated_corrected_v2.qs"
+main_dir <- "/disk192/users_dir/buyu/2025-7-7重新注释结果/monocle3_pretty"
+
+# 获取所有celltype
+seurat_obj <- qread(seurat_path)
 celltypes <- unique(seurat_obj$celltype_final)
 rm(seurat_obj)
 
-main_dir <- "/disk192/users_dir/buyu/2025-7-7重新注释结果/monocle3_pretty"
-
-# ==== 并行分析每个celltype为起点 ====
-future_lapply(celltypes, function(ct) {
-  library(qs)
-  library(Seurat)
-  library(monocle3)
-  library(SeuratWrappers)
-  library(ggplot2)
-  library(igraph)
-  
-  seurat_obj <- qread("/disk192/users_dir/buyu/2025-7-7重新注释结果/object_final_annotated_corrected_v2.qs")
+for (ct in celltypes) {
+  out_dir <- file.path(main_dir, paste0("root_", ct))
+  result_file <- file.path(out_dir, "monocle3_result.rds")
+  # 跳过已完成的celltype
+  if (file.exists(result_file)) {
+    cat("已存在，跳过:", ct, "\n")
+    next
+  }
+  cat("开始分析:", ct, "\n")
+  if (!dir.exists(out_dir)) dir.create(out_dir, recursive = TRUE)
+  # 重新加载对象
+  seurat_obj <- qread(seurat_path)
   cds <- as.cell_data_set(seurat_obj)
   colData(cds)$celltype_final <- seurat_obj$celltype_final
-  rm(seurat_obj)
-  
-  out_dir <- file.path(main_dir, paste0("root_", ct))
-  if (!dir.exists(out_dir)) dir.create(out_dir, recursive = TRUE)
-  message(paste0("分析起点: ", ct))
-  
-  # 聚类 & 轨迹学习
+  # 轨迹分析主流程
   cds <- cluster_cells(cds, cluster_method = 'louvain')
   cds <- learn_graph(cds, use_partition = TRUE, verbose = TRUE,
                      learn_graph_control = list(minimal_branch_len = 10))
-  
-  # 确定当前celltype为起点最近的主轨迹节点
   start_cells <- colnames(cds)[colData(cds)$celltype_final == ct]
-  if (length(start_cells) == 0) return(NULL)
+  if (length(start_cells) == 0) {
+    cat("该类型无细胞:", ct, "\n")
+    next
+  }
   closest_vertex <- cds@principal_graph_aux[["UMAP"]]$pr_graph_cell_proj_closest_vertex
   closest_vertex <- as.matrix(closest_vertex[colnames(cds), ])
   root_pr_nodes <- igraph::V(principal_graph(cds)[["UMAP"]])$name
@@ -43,8 +45,7 @@ future_lapply(celltypes, function(ct) {
   flag <- as.numeric(names(which.max(table(flag))))
   root_pr_nodes <- root_pr_nodes[flag]
   cds <- order_cells(cds, root_pr_nodes = root_pr_nodes)
-  
-  # 美观轨迹图
+  # 轨迹图
   p <- plot_cells(
     cds,
     color_cells_by = "pseudotime",
@@ -59,26 +60,20 @@ future_lapply(celltypes, function(ct) {
   )
   pdf_file <- file.path(out_dir, paste0("Pseudotime_umap_", ct, ".pdf"))
   ggsave(p, filename = pdf_file, width = 5.5, height = 4)
-  
-  # 拟时序数据导出
+  # 拟时序
   time <- monocle3::pseudotime(cds)
   time[is.infinite(time)] <- 0
   time_df <- data.frame(cell = names(time), pseudotime = time)
   write.table(time_df, file = file.path(out_dir, "pseudotime_data.txt"),
               sep = "\t", quote = FALSE, col.names = TRUE, row.names = FALSE)
-  
   # 保存对象
   saveRDS(cds, file = file.path(out_dir, "monocle3_result.rds"))
-  # 若需要Seurat对象也保存，可重新读取并存
-  seurat_obj2 <- qread("/disk192/users_dir/buyu/2025-7-7重新注释结果/object_final_annotated_corrected_v2.qs")
-  saveRDS(seurat_obj2, file = file.path(out_dir, "seurat_processed_data.rds"))
-  rm(seurat_obj2)
-  
-  # 差异分析
+  saveRDS(seurat_obj, file = file.path(out_dir, "seurat_processed_data.rds"))
+  # DEG分析
   deg_res <- graph_test(cds, neighbor_graph = "principal_graph", cores = 4)
   write.csv(as.data.frame(deg_res), file = file.path(out_dir, paste0("deg_graph_test_", ct, ".csv")))
-  
-  return(NULL)
-})
-
-plan(sequential)
+  # 释放内存
+  rm(seurat_obj, cds, p, time, time_df, deg_res)
+  gc()
+}
+cat("所有celltype分析完毕！\n")
