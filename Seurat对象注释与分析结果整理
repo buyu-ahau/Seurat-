@@ -5,51 +5,50 @@
 用户: buyu-ahau
 数据规模: 35,330个细胞，33,029个基因，20个clusters
 
-🎯 重新注释结果
-基本统计信息
-总细胞数: 35,330
-总基因数: 33,029
-原始cluster数: 20 (clusters 0-19)
-最终细胞类型数: 12
-主要细胞群: CD8_cells (9,450 cells, 26.75%)
-📈 细胞类型分布详情
-排名	细胞类型	细胞数量	百分比	主要来源  clusters
-1	CD8_cells	9,450	26.75%	           0, 6
-2	Plasma_cells	8,141	23.04%	1, 2
-3	Macrophages	6,054	17.14%	4, 5
-4	Neutrophils	3,359	9.51%	3
-5	B_cells	            2,226	6.30%	 7, 15
-6	CD4_cells	1,838	5.20%	            8
-7	Fibroblasts	1,131	3.20%	 9, 18*
-8	Endothelial_cells	862	2.44%	12, 14
-9	DC_cells	           832	2.35%	 10
-10	NK_cells	           747	2.11%	 11, 17
-11	Epithelial_cells	624	1.77%	13, 16
-12	Serous_cells	66	0.19%	19*
-*修正的clusters
+An object of class Seurat 
+33029 features across 35330 samples within 1 assay 
+Active assay: RNA (33029 features, 0 variable features)
+ 2 layers present: counts, data
+ 11 dimensional reductions calculated: pca, pca_RNA, harmony_RNA, tsne, tsne_harmony_RNA, umap, umap_harmony_RNA, tsne3, tsne3_harmony_RNA, umap3, umap3_harmony_RNA
+                        orig.ident nCount_RNA nFeature_RNA Groups percent.mito
+Day0_1_AAACCCACATAGGCGA     Day0_1      10481         3022   Day0    4.3125656
+Day0_1_AAACCCATCCGGGACT     Day0_1       4734         1970   Day0    2.0278834
+Day0_1_AAACCCATCGCAATTG     Day0_1       7007         2900   Day0    2.7972028
+Day0_1_AAACGAAAGCTCGACC     Day0_1        843          679   Day0    0.4744958
+Day0_1_AAACGAAAGGTTAAAC     Day0_1       7632         3029   Day0   15.5136268
+Day0_1_AAACGAAAGTTGCCTA     Day0_1       7792         3323   Day0    2.7464066
+                        percent.hgb group     S.Score   G2M.Score Phase
+Day0_1_AAACCCACATAGGCGA  0.00000000  Day0 -0.24797287 -0.65619968    G1
+Day0_1_AAACCCATCCGGGACT  0.00000000  Day0 -0.06457320 -0.28059581    G1
+Day0_1_AAACCCATCGCAATTG  0.00000000  Day0 -0.12722984 -0.35322732    G1
+Day0_1_AAACGAAAGCTCGACC  0.00000000  Day0  0.06270087  0.02365137     S
+Day0_1_AAACGAAAGGTTAAAC  0.00000000  Day0  0.57675070  0.70242888   G2M
+Day0_1_AAACGAAAGTTGCCTA  0.01283368  Day0 -0.36228807 -0.41465378    G1
+                        CC.Difference RNA_snn_res.0.5 seurat_clusters
+Day0_1_AAACCCACATAGGCGA    0.40822680               4               4
+Day0_1_AAACCCATCCGGGACT    0.21602262               8               8
+Day0_1_AAACCCATCGCAATTG    0.22599748               0               0
+Day0_1_AAACGAAAGCTCGACC    0.03904950               7               7
+Day0_1_AAACGAAAGGTTAAAC   -0.12567818               6               6
+Day0_1_AAACGAAAGTTGCCTA    0.05236571              16              16
+                               celltype   celltype_final
+Day0_1_AAACCCACATAGGCGA      Macrophage      Macrophages
+Day0_1_AAACCCATCCGGGACT       NK-T_cell        CD4_cells
+Day0_1_AAACCCATCGCAATTG       NK-T_cell        CD8_cells
+Day0_1_AAACGAAAGCTCGACC     Plasma_cell          B_cells
+Day0_1_AAACGAAAGGTTAAAC       NK-T_cell        CD8_cells
+Day0_1_AAACGAAAGTTGCCTA Epithelial_cell Epithelial_cells
+ [1] "orig.ident"      "nCount_RNA"      "nFeature_RNA"    "Groups"         
+ [5] "percent.mito"    "percent.hgb"     "group"           "S.Score"        
+ [9] "G2M.Score"       "Phase"           "CC.Difference"   "RNA_snn_res.0.5"
+[13] "seurat_clusters" "celltype"        "celltype_final" 
 
-🗂️ 完整的Cluster到细胞类型映射表
-Cluster	细胞类型	细胞数量	备注
-0	CD8_cells	6,788	最大cluster
-1	Plasma_cells	4,217	
-2	Plasma_cells	3,924	
-3	Neutrophils	3,359	
-4	Macrophages	3,212	
-5	Macrophages	2,842	
-6	CD8_cells	2,662	
-7	B_cells	2,065	
-8	CD4_cells	1,838	
-9	Fibroblasts	1,043	
-10	DC_cells	832	
-11	NK_cells	627	
-12	Endothelial_cells	575	
-13	Epithelial_cells	498	
-14	Endothelial_cells	287	
-15	B_cells	161	
-16	Epithelial_cells	126	
-17	NK_cells	120	
-18	Fibroblasts	88	修正
-19	Serous_cells	66	修正
+          B_cells         CD4_cells         CD8_cells          DC_cells 
+             2226              1838              9450               832 
+Endothelial_cells  Epithelial_cells       Fibroblasts       Macrophages 
+              862               624              1131              6054 
+      Neutrophils          NK_cells      Plasma_cells 
+             3425               747              8141 
 🔄 关键修正说明
 Cluster 18: 从 Unknown_cells → Fibroblasts (88 cells)
 Cluster 19: 从 Unknown_cells → Serous_cells (66 cells)
