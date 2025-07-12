@@ -1,0 +1,417 @@
+conda activate pyscenic
+
+pip install numpy==1.19.5
+pip install pandas==1.3.5
+pip install numba==0.56.4
+pip install pyscenic==0.12.1
+
+# 下载motif排序文件，motif 注释文件和转录因子文件
+# 以人类基因组hg19版本为参考，转录起始位点（TSS）上下游5kb区域的基因与基序（motifs）的排名数据，数据整合7个物种信息用于评估基因与基序结合可能性，确定转录因子和靶基因间调控关系
+wget https://resources.aertslab.org/cistarget/databases/homo_sapiens/hg19/refseq_r45/mc9nr/gene_based/hg19-tss-centered-5kb-7species.mc9nr.genes_vs_motifs.rankings.feather
+# 基序到转录因子的映射关系，通过分析转录因子结合位点基序，识别可能结合特定基序的转录因子。
+wget https://resources.aertslab.org/cistarget/motif2tf/motifs-v10nr_clust-nr.hgnc-m0.001-o0.0.tbl
+# 人类基因组中所有转录因子列表
+wget  https://resources.aertslab.org/cistarget/tf_lists/allTFs_hg38.txt
+####已经下载到了/disk192/users_dir/buyu/2025-7-7重新注释结果/pySCENIC/参考文件   路径下
+
+###猪基因映射到人基因
+#!/usr/bin/env Rscript
+# -*- coding: utf-8 -*-
+# 猪基因到人类同源基因转换完整脚本
+# 作者: buyu-ahau
+# 日期: 2025-07-11
+# 加载必要的库
+suppressPackageStartupMessages({
+    library(Seurat)
+    library(biomaRt)
+    library(qs)
+    library(dplyr)
+    library(SeuratDisk)
+})
+# 设置输出目录
+output_dir <- "/disk192/users_dir/buyu/2025-7-7重新注释结果/pySCENIC"
+if(!dir.exists(output_dir)) {
+    dir.create(output_dir, recursive = TRUE)
+}
+# ====================== 步骤1: 读取猪数据 ======================
+print("========== 步骤1: 读取猪数据 ==========")
+print("读取猪的Seurat对象...")
+seurat_obj <- qread("/disk192/users_dir/buyu/2025-7-7重新注释结果/object_final_annotated_corrected_v2.qs")
+print("原始猪数据信息:")
+print(seurat_obj)
+print(paste("原始基因数:", nrow(seurat_obj)))
+print(paste("细胞数:", ncol(seurat_obj)))
+# 获取猪基因符号
+pig_genes <- rownames(seurat_obj)
+print(paste("猪基因总数:", length(pig_genes)))
+# ====================== 步骤2: 连接数据库 ======================
+print("\n========== 步骤2: 连接Ensembl数据库 ==========")
+tryCatch({
+    # 连接猪基因数据库
+    pig_mart <- useMart("ensembl", dataset = "sscrofa_gene_ensembl")
+    print("✅ 成功连接猪基因数据库")
+    
+    # 连接人类基因数据库
+    human_mart <- useMart("ensembl", dataset = "hsapiens_gene_ensembl")
+    print("✅ 成功连接人类基因数据库")
+}, error = function(e) {
+    print("❌ 连接数据库失败，请检查网络")
+    print(e)
+    stop()
+})
+# ====================== 步骤3: 同源基因查询 ======================
+print("\n========== 步骤3: 同源基因查询 ==========")
+print("通过猪基因符号查找人类同源基因...")
+tryCatch({
+    # 获取猪基因的人类同源基因信息
+    pig_to_human <- getBM(
+        attributes = c("external_gene_name", "hsapiens_homolog_ensembl_gene", 
+                      "hsapiens_homolog_associated_gene_name", "hsapiens_homolog_orthology_type"),
+        filters = "external_gene_name",
+        values = pig_genes,
+        mart = pig_mart
+    )
+    print("✅ 猪到人类同源基因查询完成")
+    
+    # 查看结果
+    print(paste("查询结果行数:", nrow(pig_to_human)))
+    print("前10行结果:")
+    print(head(pig_to_human, 10))
+    
+}, error = function(e) {
+    print("❌ 同源基因查询失败")
+    print(e)
+    stop()
+})
+# ====================== 步骤4: 数据清理 ======================
+print("\n========== 步骤4: 数据清理 ==========")
+print("过滤和清理同源基因数据...")
+
+# 移除空的人类基因符号
+pig_to_human_filtered <- pig_to_human[
+    !is.na(pig_to_human$hsapiens_homolog_associated_gene_name) & 
+    pig_to_human$hsapiens_homolog_associated_gene_name != "", 
+]
+print(paste("过滤后的同源基因对数:", nrow(pig_to_human_filtered)))
+# 移除重复的猪基因（保留第一个匹配）
+pig_to_human_unique <- pig_to_human_filtered[!duplicated(pig_to_human_filtered$external_gene_name), ]
+print(paste("去重后的同源基因对数:", nrow(pig_to_human_unique)))
+# 创建基因映射
+gene_mapping <- setNames(
+    pig_to_human_unique$hsapiens_homolog_associated_gene_name, 
+    pig_to_human_unique$external_gene_name
+)
+
+print("同源基因转换统计:")
+print(paste("原始猪基因数:", length(pig_genes)))
+print(paste("找到同源基因的数量:", length(gene_mapping)))
+print(paste("转换率:", round(length(gene_mapping)/length(pig_genes)*100, 2), "%"))
+# ====================== 步骤5: 创建转换后的对象 ======================
+print("\n========== 步骤5: 创建转换后的Seurat对象 ==========")
+# 筛选Seurat对象中存在同源基因的数据
+genes_to_keep <- intersect(pig_genes, names(gene_mapping))
+print(paste("保留的基因数:", length(genes_to_keep)))
+# 子集化Seurat对象
+print("过滤Seurat对象...")
+seurat_obj_filtered <- subset(seurat_obj, features = genes_to_keep)
+print("过滤后的Seurat对象:")
+print(seurat_obj_filtered)
+# 获取新的基因名称
+new_gene_names <- gene_mapping[genes_to_keep]
+# 检查重复的人类基因名称
+print("检查重复的人类基因名称...")
+duplicated_table <- table(duplicated(new_gene_names))
+print(duplicated_table)
+
+if(duplicated_table["TRUE"] > 0) {
+    duplicated_genes <- new_gene_names[duplicated(new_gene_names)]
+    print(paste("重复的基因数:", length(duplicated_genes)))
+    print("前10个重复基因:")
+    print(head(duplicated_genes, 10))
+}
+
+# 为重复基因添加后缀
+print("为重复基因添加后缀...")
+new_gene_names_unique <- make.unique(new_gene_names)
+
+# 创建新的assay数据
+new_counts <- seurat_obj_filtered@assays$RNA@layers$counts
+new_data <- seurat_obj_filtered@assays$RNA@layers$data
+
+# 设置新的基因名称
+rownames(new_counts) <- new_gene_names_unique
+rownames(new_data) <- new_gene_names_unique
+
+# 创建新的Seurat对象
+print("创建新的Seurat对象...")
+seurat_obj_human <- CreateSeuratObject(
+    counts = new_counts,
+    meta.data = seurat_obj_filtered@meta.data,
+    project = "pig_to_human_homolog"
+)
+# 添加标准化数据
+seurat_obj_human@assays$RNA@layers$data <- new_data
+# 复制其他信息
+if(length(seurat_obj_filtered@reductions) > 0) {
+    seurat_obj_human@reductions <- seurat_obj_filtered@reductions
+}
+
+print("最终转换结果:")
+print(seurat_obj_human)
+print(paste("最终基因数:", nrow(seurat_obj_human)))
+print(paste("细胞数:", ncol(seurat_obj_human)))
+# 检查细胞类型信息
+if("celltype" %in% colnames(seurat_obj_human@meta.data)) {
+    print("细胞类型分布:")
+    print(table(seurat_obj_human@meta.data$celltype))
+}
+
+# ====================== 步骤6: 保存结果 ======================
+print("\n========== 步骤6: 保存结果 ==========")
+# 保存转换后的对象
+qsave(seurat_obj_human, file.path(output_dir, "seurat_obj_pig_to_human_homolog.qs"))
+print("✅ 转换后的Seurat对象已保存")
+# 保存基因映射表
+write.csv(pig_to_human_unique, file.path(output_dir, "pig_to_human_gene_mapping.csv"), row.names = FALSE)
+print("✅ 基因映射表已保存")
+# 保存去重后的基因映射表
+gene_mapping_unique <- data.frame(
+    pig_gene = names(gene_mapping), 
+    human_gene = new_gene_names_unique,
+    original_human_gene = gene_mapping,
+    stringsAsFactors = FALSE
+)
+write.csv(gene_mapping_unique, file.path(output_dir, "gene_mapping_unique.csv"), row.names = FALSE)
+print("✅ 去重基因映射表已保存")
+# ====================== 步骤7: 生成LOOM文件 ======================
+print("\n========== 步骤7: 生成LOOM文件 ==========")
+
+tryCatch({
+    # 生成LOOM文件
+    as.loom(seurat_obj_human, 
+            filename = file.path(output_dir, "scenic_input_pig_to_human.loom"), 
+            verbose = TRUE, 
+            overwrite = TRUE)
+    
+    print("✅ LOOM文件已生成")
+    
+    # 检查文件大小
+    file_size <- file.info(file.path(output_dir, "scenic_input_pig_to_human.loom"))$size
+    print(paste("文件大小:", round(file_size/1024/1024, 2), "MB"))
+    
+}, error = function(e) {
+    print("❌ LOOM文件生成失败:")
+    print(e)
+})
+# ====================== 最终总结 ======================
+print("\n" %s% paste(rep("=", 60), collapse=""))
+print("🎉 猪基因到人类同源基因转换完成！")
+print(paste(rep("=", 60), collapse=""))
+print("最终统计:")
+print(paste("原始猪基因数:", length(pig_genes)))
+print(paste("找到同源基因数:", length(gene_mapping)))
+print(paste("最终保留基因数:", nrow(seurat_obj_human)))
+print(paste("转换率:", round(nrow(seurat_obj_human)/length(pig_genes)*100, 2), "%"))
+print("\n生成的文件:")
+print(paste("- Seurat对象:", file.path(output_dir, "seurat_obj_pig_to_human_homolog.qs")))
+print(paste("- 基因映射表:", file.path(output_dir, "pig_to_human_gene_mapping.csv")))
+print(paste("- 去重映射表:", file.path(output_dir, "gene_mapping_unique.csv")))
+print(paste("- LOOM文件:", file.path(output_dir, "scenic_input_pig_to_human.loom")))
+print("\n🚀 现在可以运行pySCENIC分析了！")
+> print(paste("原始猪基因数:", length(pig_genes)))
+[1] "原始猪基因数: 33029"
+> print(paste("找到同源基因数:", length(gene_mapping)))
+[1] "找到同源基因数: 15725"
+> print(paste("最终保留基因数:", nrow(seurat_obj_human)))
+[1] "最终保留基因数: 15725"
+> print(paste("转换率:", round(nrow(seurat_obj_human)/length(pig_genes)*100, 2), "%"))
+[1] "转换率: 47.61 %"
+
+
+
+
+####pyscenic分析
+#!/usr/bin/env python3
+"""
+pySCENIC Pipeline Script
+Author: buyu-ahau
+Date: 2025-07-11
+Description: 自动化运行pySCENIC三步分析流程
+"""
+
+import os
+import sys
+import subprocess
+import time
+import logging
+from datetime import datetime
+
+# 设置日志
+def setup_logging(log_file):
+    """设置日志记录"""
+    logging.basicConfig(
+        level=logging.INFO,
+        format='%(asctime)s - %(levelname)s - %(message)s',
+        handlers=[
+            logging.FileHandler(log_file),
+            logging.StreamHandler(sys.stdout)
+        ]
+    )
+    return logging.getLogger(__name__)
+
+def run_command(cmd, logger, step_name):
+    """运行shell命令并记录输出"""
+    logger.info(f"开始执行: {step_name}")
+    logger.info(f"命令: {cmd}")
+    
+    start_time = time.time()
+    
+    try:
+        # 运行命令
+        result = subprocess.run(
+            cmd, 
+            shell=True, 
+            capture_output=True, 
+            text=True, 
+            check=True
+        )
+        
+        end_time = time.time()
+        duration = end_time - start_time
+        
+        logger.info(f"{step_name} 完成!")
+        logger.info(f"耗时: {duration:.2f} 秒 ({duration/60:.2f} 分钟)")
+        
+        if result.stdout:
+            logger.info(f"标准输出: {result.stdout}")
+        
+        return True
+        
+    except subprocess.CalledProcessError as e:
+        end_time = time.time()
+        duration = end_time - start_time
+        
+        logger.error(f"{step_name} 失败!")
+        logger.error(f"错误代码: {e.returncode}")
+        logger.error(f"错误信息: {e.stderr}")
+        logger.error(f"失败前耗时: {duration:.2f} 秒")
+        
+        return False
+
+def main():
+    """主函数"""
+    # 路径设置
+    BASE_DIR = "/disk192/users_dir/buyu/2025-7-7重新注释结果/pySCENIC"
+    INPUT_LOOM = f"{BASE_DIR}/input_data/scenic_input_raw_counts.loom"
+    REF_DIR = f"{BASE_DIR}/参考文件"
+    OUTPUT_DIR = f"{BASE_DIR}/output"
+    LOG_FILE = f"{OUTPUT_DIR}/pyscenic_pipeline.log"
+    
+    # 创建输出目录
+    os.makedirs(OUTPUT_DIR, exist_ok=True)
+    
+    # 设置日志
+    logger = setup_logging(LOG_FILE)
+    
+    logger.info("="*60)
+    logger.info("pySCENIC Pipeline 开始运行")
+    logger.info(f"开始时间: {datetime.now().strftime('%Y-%m-%d %H:%M:%S')}")
+    logger.info("="*60)
+    
+    # 检查输入文件
+    logger.info("检查输入文件...")
+    required_files = [
+        INPUT_LOOM,
+        f"{REF_DIR}/allTFs_hg38.txt",
+        f"{REF_DIR}/hg19-tss-centered-10kb-10species.mc9nr.genes_vs_motifs.rankings.feather",
+        f"{REF_DIR}/motifs-v10nr_clust-nr.hgnc-m0.001-o0.0.tbl"
+    ]
+    
+    missing_files = []
+    for file_path in required_files:
+        if not os.path.exists(file_path):
+            missing_files.append(file_path)
+    
+    if missing_files:
+        logger.error("以下必需文件缺失:")
+        for file_path in missing_files:
+            logger.error(f"  - {file_path}")
+        sys.exit(1)
+    else:
+        logger.info("所有必需文件都存在")
+    
+    # 步骤1: GRN (基因调控网络推断)
+    logger.info("\n" + "="*50)
+    logger.info("步骤 1/3: GRN (基因调控网络推断)")
+    logger.info("="*50)
+    
+    grn_cmd = f"""pyscenic grn \
+  --num_workers 48 \
+  --output {OUTPUT_DIR}/grn_output.tsv \
+  --method grnboost2 \
+  {INPUT_LOOM} \
+  {REF_DIR}/allTFs_hg38.txt"""
+    
+    if not run_command(grn_cmd, logger, "GRN步骤"):
+        logger.error("GRN步骤失败，尝试使用备用方法...")
+        
+        # 备用方法 - 使用arboreto_with_multiprocessing.py
+        backup_cmd = f"""python /home/buyu/miniconda3/envs/pyscenics/bin/arboreto_with_multiprocessing.py \
+  --num_workers 48 \
+  --output {OUTPUT_DIR}/grn_output.tsv \
+  --method grnboost2 \
+  {INPUT_LOOM} \
+  {REF_DIR}/allTFs_hg38.txt"""
+        
+        if not run_command(backup_cmd, logger, "GRN步骤(备用方法)"):
+            logger.error("GRN步骤完全失败，终止流程")
+            sys.exit(1)
+    
+    # 步骤2: CTX (顺式调控模块预测)
+    logger.info("\n" + "="*50)
+    logger.info("步骤 2/3: CTX (顺式调控模块预测)")
+    logger.info("="*50)
+    
+    ctx_cmd = f"""pyscenic ctx \
+  {OUTPUT_DIR}/grn_output.tsv \
+  {REF_DIR}/hg19-tss-centered-10kb-10species.mc9nr.genes_vs_motifs.rankings.feather \
+  --annotations_fname {REF_DIR}/motifs-v10nr_clust-nr.hgnc-m0.001-o0.0.tbl \
+  --expression_mtx_fname {INPUT_LOOM} \
+  --mode "dask_multiprocessing" \
+  --output {OUTPUT_DIR}/ctx.csv \
+  --num_workers 56 \
+  --mask_dropouts"""
+    
+    if not run_command(ctx_cmd, logger, "CTX步骤"):
+        logger.error("CTX步骤失败，终止流程")
+        sys.exit(1)
+    
+    # 步骤3: AUCell (调控子活性计算)
+    logger.info("\n" + "="*50)
+    logger.info("步骤 3/3: AUCell (调控子活性计算)")
+    logger.info("="*50)
+    
+    aucell_cmd = f"""pyscenic aucell \
+  {INPUT_LOOM} \
+  {OUTPUT_DIR}/ctx.csv \
+  --output {OUTPUT_DIR}/aucell.loom \
+  --num_workers 32"""
+    
+    if not run_command(aucell_cmd, logger, "AUCell步骤"):
+        logger.error("AUCell步骤失败，终止流程")
+        sys.exit(1)
+    
+    # 完成
+    logger.info("\n" + "="*60)
+    logger.info("🎉 pySCENIC Pipeline 全部完成! 🎉")
+    logger.info(f"完成时间: {datetime.now().strftime('%Y-%m-%d %H:%M:%S')}")
+    logger.info("="*60)
+    
+    logger.info("输出文件:")
+    logger.info(f"  - GRN结果: {OUTPUT_DIR}/grn_output.tsv")
+    logger.info(f"  - CTX结果: {OUTPUT_DIR}/ctx.csv")
+    logger.info(f"  - AUCell结果: {OUTPUT_DIR}/aucell.loom")
+    logger.info(f"  - 日志文件: {LOG_FILE}")
+
+if __name__ == "__main__":
+    main()
