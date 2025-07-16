@@ -10,4 +10,3 @@ DC_cells,1,HLA-DRA,,Antigen presenting cells
 Epithelial_cells,5,"EPCAM, SFTPC","SFTPA1, SCGB1A1, FOXJ1",Barrier and secretory cells
 Fibroblasts,3,"SPARCL1, BGN",MGP,Stromal cells
 Endothelial_cells,5,"PECAM1, CDH5","VWF, PROX1, CA4",Vascular cells
-Serous_cells,1,LTF,,Secretory cells
