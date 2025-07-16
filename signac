@@ -1,0 +1,79 @@
+###scRNA-seq联合scATAC-seq
+library(Seurat)
+library(Signac)
+library(ggplot2)
+library(patchwork)
+
+# 设置输出目录
+output_dir <- "/disk191/users_dir/buyu/signac/objects"
+plots_dir  <- "/disk191/users_dir/buyu/signac/plots"
+
+# 创建输出目录（如果不存在）
+dir.create(output_dir, recursive = TRUE, showWarnings = FALSE)
+dir.create(plots_dir, recursive = TRUE, showWarnings = FALSE)
+
+# 加载已有的数据
+atac_path <- file.path("/disk192/users_dir/buyu/2025-7-7重新注释结果/signac", "objects", "atac_with_geneactivity_complete.rds")
+pbmc_atac <- readRDS(atac_path)
+
+rna_path <- "/disk192/users_dir/buyu/2025-7-7重新注释结果/object_final_annotated_corrected_v2.qs"
+pbmc_rna_new <- qread(rna_path)
+
+# 检查并设置可变特征基因
+if(length(VariableFeatures(pbmc_rna_new)) == 0){
+  pbmc_rna_new <- FindVariableFeatures(pbmc_rna_new, nfeatures = 2000)
+}
+variable_genes <- VariableFeatures(pbmc_rna_new)
+
+# 1. 寻找转移锚点
+transfer.anchors <- FindTransferAnchors(
+  reference = pbmc_rna_new,
+  query = pbmc_atac,
+  features = variable_genes,
+  reduction = 'cca',
+  query.assay = "GeneActivity",
+  reference.assay = "RNA"
+)
+
+# 2. 标签传递
+pbmc_atac <- TransferData(anchorset = transfer.anchors, refdata = pbmc_rna_new, weight.reduction = pbmc_atac[['pca']])
+
+# 3. UMAP降维
+pbmc_atac <- RunUMAP(pbmc_atac, reduction = "lsi", dims = 2:30)
+
+# 4. 可视化对比 UMAP
+plot1 <- DimPlot(
+  object = pbmc_rna_new,
+  group.by = "celltype_final",
+  label = TRUE, repel = TRUE, raster=TRUE
+) + ggtitle("scRNA-seq Reference")
+
+plot2 <- DimPlot(
+  object = pbmc_atac,
+  group.by = "predicted.id",
+  label = TRUE, repel = TRUE, raster=TRUE
+) + ggtitle("scATAC-seq Predicted")
+
+combined_plot <- plot1 + plot2
+print(combined_plot)
+
+# 5. 预测分数分布
+plot_hist <- ggplot(pbmc_atac@meta.data, aes(x = prediction.score.max)) +
+  geom_histogram(bins = 50, fill = "steelblue", color = "black", alpha = 0.7) +
+  geom_vline(xintercept = 0.5, color = "red", linetype = "dashed") +
+  labs(title = "Prediction Score Distribution", x = "Prediction Score", y = "Cell Count") +
+  theme_minimal()
+
+print(plot_hist)
+
+# 6. 保存对象和图表
+saveRDS(pbmc_atac, file.path(output_dir, "integrated_analysis_11celltypes_final_atac_annotated.rds"))
+saveRDS(transfer.anchors, file.path(output_dir, "integrated_analysis_11celltypes_transfer_anchors.rds"))
+
+ggsave(file.path(plots_dir, "integration_combined_umap.pdf"), plot=combined_plot, width=15, height=7)
+ggsave(file.path(plots_dir, "prediction_score_histogram.pdf"), plot=plot_hist, width=8, height=6)
+
+cat("🎉 分析完成！对象和图表已保存到 /disk191/users_dir/buyu/signac/ 下！\n")
+
+
+
