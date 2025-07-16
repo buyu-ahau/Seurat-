@@ -1,4 +1,4 @@
-###scRNA-seq联合scATAC-seq
+###scATAC-seq联合scRNA-seq注释细胞群
 library(Seurat)
 library(Signac)
 library(ggplot2)
@@ -77,3 +77,79 @@ cat("🎉 分析完成！对象和图表已保存到 /disk191/users_dir/buyu/sig
 
 
 
+
+###scATAC-seq差异峰分析
+library(Seurat)
+library(Signac)
+library(GenomicRanges)
+library(ggplot2)
+library(patchwork)
+library(GenomicFeatures)
+
+# 1. 参数区
+immune_types <- c("CD4_cells", "CD8_cells", "NK_cells", "Neutrophils",
+                  "Macrophages", "B_cells", "Plasma_cells", "DC_cells")
+output_dir <- "/disk191/users_dir/buyu/signac/immune_DA_results"
+plot_dir <- file.path(output_dir, "violin_plots")
+dir.create(output_dir, recursive = TRUE, showWarnings = FALSE)
+dir.create(plot_dir, recursive = TRUE, showWarnings = FALSE)
+
+assay_name <- if ("ATAC" %in% Assays(pbmc_atac)) "ATAC" else "peaks"
+DefaultAssay(pbmc_atac) <- assay_name
+latent_var <- if ("nCount_ATAC" %in% colnames(pbmc_atac@meta.data)) "nCount_ATAC" else "nCount_peaks"
+Idents(pbmc_atac) <- pbmc_atac$predicted.id
+
+# 2. 加载GTF注释
+gtf_file <- "/disk191/users_dir/buyu/signac/Sus_scrofa.Sscrofa11.1.114.chr.gtf.gz"
+txdb <- makeTxDbFromGFF(gtf_file, format = "gtf")
+gene_anno <- genes(txdb)
+
+# 3. 循环分析
+for (i in 1:(length(immune_types) - 1)) {
+  for (j in (i + 1):length(immune_types)) {
+    group1 <- immune_types[i]
+    group2 <- immune_types[j]
+    cat("Comparing:", group1, "vs", group2, "\n")
+    da_peaks <- FindMarkers(
+      object = pbmc_atac,
+      ident.1 = group1,
+      ident.2 = group2,
+      test.use = 'LR',
+      latent.vars = latent_var
+    )
+
+    # 仅保留有意义的peak（正负向合并top10）
+    da_peaks$peak <- rownames(da_peaks)
+    da_peaks <- da_peaks[order(da_peaks$p_val_adj, -abs(da_peaks$avg_log2FC)), ]
+    top_peaks <- rbind(
+      head(da_peaks[da_peaks$avg_log2FC > 0, ], 10),
+      head(da_peaks[da_peaks$avg_log2FC < 0, ], 10)
+    )
+    # 4. 注释peak
+    # peak格式如chr1-1000-1500，需转为GRanges
+    peak_gr <- StringToGRanges(top_peaks$peak, sep = c("-", "-"))
+    overlap <- as.data.frame(findOverlaps(peak_gr, gene_anno, type="any", select="all"))
+    # 合并注释信息
+    top_peaks$gene_id <- NA
+    top_peaks$gene_name <- NA
+    if (nrow(overlap) > 0) {
+      top_peaks$gene_id[overlap$queryHits] <- gene_anno$gene_id[overlap$subjectHits]
+      if (!is.null(gene_anno$gene_name)) {
+        top_peaks$gene_name[overlap$queryHits] <- gene_anno$gene_name[overlap$subjectHits]
+      }
+    }
+    # 保存表格
+    outcsv <- file.path(output_dir, paste0("DApeaks_", group1, "_vs_", group2, "_top10_annotated.csv"))
+    write.csv(top_peaks, outcsv, row.names = FALSE)
+
+    # 5. 小提琴图（每组前5正向/负向峰）
+    plot_peaks <- unique(top_peaks$peak)
+    for (p in plot_peaks) {
+      plt <- VlnPlot(pbmc_atac, features = p, group.by = "predicted.id", pt.size = 0.1) +
+        ggtitle(paste0("Peak: ", p, "\n", group1, " vs ", group2))
+      ggsave(file.path(plot_dir, paste0("Vln_", group1, "_vs_", group2, "_", gsub("[:-]", "_", p), ".pdf")),
+             plt, width = 6, height = 4)
+    }
+  }
+}
+cat("全部分析完成！\n")
