@@ -1,0 +1,60 @@
+# 1. 加载R包
+library(Seurat)
+library(sceasy)
+library(qs)
+library(reticulate) # <-- 确保加载了reticulate包
+
+# --- 关键修复步骤 ---
+# 强制 R 使用我们当前已激活的 conda 环境，从而跳过网络下载
+use_condaenv("scconvert", required = TRUE)
+# --------------------
+
+
+# 2. 定义文件路径
+h5ad_file <- "/disk192/users_dir/buyu/人肺炎scRNA-seq/BALF_VIB-UGent_processed_cleaned.h5ad"
+rds_file_v4 <- "/disk192/users_dir/buyu/人肺炎scRNA-seq/BALF_cleaned_v4.rds"
+qs_file_v5 <- "/disk192/users_dir/buyu/人肺炎scRNA-seq/BALF_cleaned_v5.qs"
+
+cat("====== 开始处理文件 ======\n")
+print(Sys.time())
+
+# 3. [h5ad -> Seurat v4]
+cat("\n步骤 1/4: 正在转换 .h5ad 文件为 Seurat v4 格式...\n")
+sceasy::convertFormat(
+  obj = h5ad_file,
+  from = "anndata",
+  to = "seurat",
+  outFile = rds_file_v4
+)
+cat("-> Seurat v4 文件已保存至:", rds_file_v4, "\n")
+
+
+# 4. [加载并检查 v4]
+cat("\n步骤 2/4: 加载 Seurat v4 对象进行检查...\n")
+sce.v4 <- readRDS(rds_file_v4)
+print(sce.v4)
+
+
+# 5. [v4 -> v5]
+cat("\n步骤 3/4: 正在将对象转换为 Seurat v5 格式...\n")
+sce.v5 <- CreateSeuratObject(
+  counts = sce.v4@assays$RNA@counts,
+  meta.data = sce.v4@meta.data
+)
+
+if ("pca" %in% names(sce.v4@reductions)) {
+  sce.v5[["pca"]] <- sce.v4[["pca"]]
+}
+if ("umap" %in% names(sce.v4@reductions)) {
+  sce.v5[["umap"]] <- sce.v4[["umap"]]
+}
+print(sce.v5)
+
+
+# 6. [保存 v5]
+cat("\n步骤 4/4: 正在保存最终的 Seurat v5 对象...\n")
+qsave(sce.v5, file = qs_file_v5)
+
+print(Sys.time())
+cat("\n====== 处理完成！======\n")
+cat("最终可用于分析的 Seurat v5 对象已保存至:\n", qs_file_v5, "\n")
