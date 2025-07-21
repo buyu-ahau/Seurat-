@@ -1,2 +1,10 @@
-# Seurat-
-Seurat对象注释脚本
+1、scRAN-seq数据分析
+①、seurat细胞群注释
+②、Maker基因标注
+③、基因映射图绘制
+④、转录因子分析
+⑤、拟时序分析
+2、scATAC-seq
+①、scATAC-seq流程分析
+②、联合scRNA-seq分析
+③、差异峰分析
