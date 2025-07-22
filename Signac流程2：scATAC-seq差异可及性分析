@@ -5,7 +5,6 @@ library(GenomicRanges)
 library(ggplot2)
 library(patchwork)
 library(rtracklayer)
-library(future) # <-- 新增：加载并行计算包
 
 # --- 1. 参数设置 ---
 # (这部分保持不变)
@@ -16,18 +15,13 @@ immune_types <- c("CD4_cells", "CD8_cells", "NK_cells", "Neutrophils",
 base_path <- "/disk192/users_dir/buyu/2025-7-7重新注释结果/signac"
 output_dir <- file.path(base_path, "immune_DA_results_optimized")
 plot_dir <- file.path(output_dir, "violin_plots")
+intermediate_dir <- file.path(output_dir, "intermediate_da_peaks") 
 dir.create(output_dir, recursive = TRUE, showWarnings = FALSE)
 dir.create(plot_dir, recursive = TRUE, showWarnings = FALSE)
+dir.create(intermediate_dir, recursive = TRUE, showWarnings = FALSE)
 
-# --- 1.5. 设置并行计算环境 (内存优化) ---
-# **【优化一】: 大幅减少并行核心数，这是防止内存爆炸最关键的一步。**
-# 从 64 降低到 16，以减少内存复制的开销。
-# 如果内存依然不足，可以尝试进一步降低到 8。
-workers_to_use <- 8
-cat(paste("Setting up parallel processing with", workers_to_use, "workers to conserve memory...\n")); flush.console()
-plan("multicore", workers = workers_to_use)
-options(future.globals.maxSize = 50 * 1024^3)
-
+# --- 1.5. 并行计算设置已被移除 ---
+# 该脚本现在将以单核心模式运行，以最大限度地保证内存稳定。
 
 # --- 2. 读取并准备Seurat对象 ---
 rds_path <- file.path(base_path, "objects/integrated_analysis_11celltypes_final_atac_annotated.rds")
@@ -41,99 +35,188 @@ DefaultAssay(pbmc_atac) <- assay_name
 latent_var <- if ("nCount_ATAC" %in% colnames(pbmc_atac@meta.data)) "nCount_ATAC" else "nCount_peaks"
 Idents(pbmc_atac) <- pbmc_atac$predicted.id
 
+# 【修复一】: 确保 ChromatinAssay 对象的 ranges 槽正确设置
+cat("Ensuring the granges slot of the assay is set correctly...\n"); flush.console()
+# 先检查ranges是否为NULL，如果为NULL才进行设置
+if(is.null(pbmc_atac[[assay_name]]@ranges)) {
+  gr <- StringToGRanges(rownames(pbmc_atac[[assay_name]]))
+  pbmc_atac[[assay_name]]@ranges <- gr
+  cat("Ranges slot was empty and has been set.\n"); flush.console()
+} else {
+  cat("Ranges slot already exists.\n"); flush.console()
+}
+
+# 【修复二】: 统一染色体命名风格，更健壮的方式
+cat("Standardizing seqlevels in the Seurat object to UCSC style...\n"); flush.console()
+# 直接对ranges对象设置seqlevelsStyle
+new_ranges <- pbmc_atac[[assay_name]]@ranges
+seqlevelsStyle(new_ranges) <- "UCSC"
+pbmc_atac[[assay_name]]@ranges <- new_ranges
+cat("Seqlevels style set to:", seqlevelsStyle(pbmc_atac[[assay_name]]@ranges), "\n"); flush.console()
+
 # --- 4. 设置基因注释 (关键步骤) ---
 gtf_file <- file.path(base_path, "Sus_scrofa.Sscrofa11.1.114.chr.gtf.gz")
 cat("Setting up gene annotations for Signac using:", gtf_file, "\n"); flush.console()
-annotations <- rtracklayer::import(gtf_file)
-seqlevelsStyle(annotations) <- "UCSC" 
-Annotation(pbmc_atac) <- annotations
-cat("Gene annotation set successfully.\n"); flush.console()
+# 【修复三】: 添加错误处理，确保GTF文件可以正确导入
+tryCatch({
+  annotations <- rtracklayer::import(gtf_file)
+  seqlevelsStyle(annotations) <- "UCSC" 
+  Annotation(pbmc_atac) <- annotations
+  cat("Gene annotation set successfully.\n"); flush.console()
+}, error = function(e) {
+  cat("ERROR: Failed to import or set annotations:", conditionMessage(e), "\n")
+  cat("Continuing without annotations...\n"); flush.console()
+})
 
 # --- 5. 循环进行差异可及性分析 ---
-cat("Starting pairwise differential accessibility analysis...\n"); flush.console()
+cat("Starting pairwise differential accessibility analysis in single-core mode...\n"); flush.console()
+# 【修复四】: 添加错误处理以使脚本更健壮
 for (i in 1:(length(immune_types) - 1)) {
   for (j in (i + 1):length(immune_types)) {
     group1 <- immune_types[i]
     group2 <- immune_types[j]
     
-    if (!group1 %in% levels(Idents(pbmc_atac)) || !group2 %in% levels(Idents(pbmc_atac))) {
-        cat("Skipping comparison:", group1, "vs", group2, "- one or both cell types not found.\n"); flush.console()
+    # 【断点续跑功能】: 检查中间文件是否已存在
+    intermediate_file_path <- file.path(intermediate_dir, paste0("DApeaks_raw_", group1, "_vs_", group2, ".rds"))
+    if (file.exists(intermediate_file_path)) {
+        cat("Result for", group1, "vs", group2, "already exists. Skipping.\n"); flush.console()
+        next # 如果文件存在，直接跳到下一次循环
+    }
+    
+    # 【修复五】: 更健壮的检查级别是否存在
+    if (!(group1 %in% levels(Idents(pbmc_atac))) || !(group2 %in% levels(Idents(pbmc_atac)))) {
+        cat("Skipping comparison:", group1, "vs", group2, "- one or both cell types not found in levels:", 
+            paste(levels(Idents(pbmc_atac)), collapse=", "), "\n"); flush.console()
         next
+    }
+    
+    # 【修复六】: 检查每个组中是否有足够的细胞
+    cells_group1 <- WhichCells(pbmc_atac, idents = group1)
+    cells_group2 <- WhichCells(pbmc_atac, idents = group2)
+    
+    if (length(cells_group1) < 10 || length(cells_group2) < 10) {
+      cat("Skipping comparison:", group1, "vs", group2, "- not enough cells in one or both groups.\n"); flush.console()
+      cat("Cells in", group1, ":", length(cells_group1), ", Cells in", group2, ":", length(cells_group2), "\n"); flush.console()
+      next
     }
     
     cat("Comparing:", group1, "vs", group2, "\n"); flush.console()
     
-    # **【优化二】: 在循环内部预先筛选数据，只对包含两种目标细胞的子集进行操作。**
-    # 这是最高效的内存优化方法，可以极大减少传递给并行进程的数据量。
+    # 【内存优化】: 在循环内部预先筛选数据
     cat("Subsetting Seurat object for comparison...\n"); flush.console()
-    cells_to_keep <- WhichCells(pbmc_atac, idents = c(group1, group2))
-    temp_seurat_subset <- subset(pbmc_atac, cells = cells_to_keep)
+    cells_to_keep <- c(cells_group1, cells_group2)  # 使用已计算的细胞列表
     
-    # 在子集上运行 FindMarkers
-    da_peaks <- FindMarkers(
-      object = temp_seurat_subset, # 使用小对象
-      ident.1 = group1,
-      ident.2 = group2,
-      test.use = 'LR',
-      latent.vars = latent_var,
-      min.pct = 0.05
-    )
-
-    # --- 6. 筛选、注释并保存结果 ---
-    sig_peaks <- da_peaks[da_peaks$p_val_adj < 0.05, ]
+    # 【修复七】: 使用tryCatch捕获可能的错误
+    tryCatch({
+      temp_seurat_subset <- subset(pbmc_atac, cells = cells_to_keep)
+      
+      # 在子集上运行 FindMarkers
+      da_peaks <- FindMarkers(
+        object = temp_seurat_subset, # 使用小对象
+        ident.1 = group1,
+        ident.2 = group2,
+        test.use = 'LR',
+        latent.vars = latent_var,
+        min.pct = 0.05
+      )
+      
+      # 保存原始的、未经筛选的 FindMarkers 中间结果
+      saveRDS(da_peaks, file = intermediate_file_path)
+      cat("Saved raw intermediate results to:", intermediate_file_path, "\n"); flush.console()
+      
+      # --- 6. 筛选、注释并保存最终结果 ---
+      sig_peaks <- da_peaks[da_peaks$p_val_adj < 0.05, ]
+      
+      if (nrow(sig_peaks) == 0) {
+          cat("No significant DA peaks found for", group1, "vs", group2, ". Skipping annotation.\n"); flush.console()
+          rm(temp_seurat_subset, da_peaks)
+          gc() 
+          next
+      }
+      
+      cat("Annotating all significant peaks...\n"); flush.console()
+      sig_peaks$peak <- rownames(sig_peaks)
+      
+      # 【修复八】: 添加错误处理，ClosestFeature有时会失败
+      tryCatch({
+        closest_features_all <- ClosestFeature(pbmc_atac, regions = rownames(sig_peaks))
+        annotated_sig_peaks <- cbind(sig_peaks, closest_features_all[, c("gene_name", "closest_region", "distance")])
+      }, error = function(e) {
+        cat("WARNING: Failed to annotate peaks with ClosestFeature:", conditionMessage(e), "\n")
+        cat("Continuing with unannotated peaks.\n"); flush.console()
+        annotated_sig_peaks <- sig_peaks
+        annotated_sig_peaks$gene_name <- NA
+        annotated_sig_peaks$closest_region <- NA
+        annotated_sig_peaks$distance <- NA
+      })
+      
+      outcsv_all <- file.path(output_dir, paste0("DApeaks_", group1, "_vs_", group2, "_allsig_annotated.csv"))
+      write.csv(annotated_sig_peaks, outcsv_all, row.names = FALSE)
+      cat("Saved all", nrow(annotated_sig_peaks), "significant peaks to:", outcsv_all, "\n"); flush.console()
+      
+      # 【修复九】: 优化Top peaks选择和合并
+      # 确保有足够的行来选择
+      n_pos <- min(50, nrow(annotated_sig_peaks[annotated_sig_peaks$avg_log2FC > 0, ]))
+      n_neg <- min(50, nrow(annotated_sig_peaks[annotated_sig_peaks$avg_log2FC < 0, ]))
+      
+      top_50_pos <- head(annotated_sig_peaks[order(-annotated_sig_peaks$avg_log2FC), ], n_pos)
+      top_50_neg <- head(annotated_sig_peaks[order(annotated_sig_peaks$avg_log2FC), ], n_neg)
+      top_50_df <- rbind(top_50_pos, top_50_neg)
+      
+      if (nrow(top_50_df) > 0) {
+          outcsv_top50 <- file.path(output_dir, paste0("DApeaks_", group1, "_vs_", group2, "_top50_annotated.csv"))
+          write.csv(top_50_df, outcsv_top50, row.names = FALSE)
+          cat("Saved top", nrow(top_50_df), "peaks to:", outcsv_top50, "\n"); flush.console()
+      }
+      
+      # --- 7. 批量绘制小提琴图 ---
+      cat("Generating violin plots for top 20 peaks...\n"); flush.console()
+      # 【修复十】: 确保有足够的行来选择
+      n_pos_plot <- min(10, nrow(top_50_df[top_50_df$avg_log2FC > 0, ]))
+      n_neg_plot <- min(10, nrow(top_50_df[top_50_df$avg_log2FC < 0, ]))
+      
+      plot_peaks_pos <- head(top_50_df[top_50_df$avg_log2FC > 0, ], n_pos_plot)
+      plot_peaks_neg <- head(top_50_df[top_50_df$avg_log2FC < 0, ], n_neg_plot)
+      plot_peaks_df <- rbind(plot_peaks_pos, plot_peaks_neg)
+      
+      if (nrow(plot_peaks_df) > 0) {
+        # 【修复十一】: 使用tryCatch捕获绘图错误
+        tryCatch({
+          plot_peaks <- plot_peaks_df$peak
+          vln_plot <- VlnPlot(
+            pbmc_atac,
+            features = plot_peaks,
+            group.by = "predicted.id",
+            pt.size = 0,
+            ncol = 2
+          ) + labs(title = paste(group1, "vs", group2, "(Top", nrow(plot_peaks_df), "Peaks)"))
+          pdf_path <- file.path(plot_dir, paste0("Vln_", group1, "_vs_", group2, "_top20_DApeaks.pdf"))
+          ggsave(pdf_path, vln_plot, width = 12, height = 5 * ceiling(length(plot_peaks) / 2), limitsize = FALSE)
+          cat("Saved violin plot to:", pdf_path, "\n"); flush.console()
+        }, error = function(e) {
+          cat("WARNING: Failed to generate violin plot:", conditionMessage(e), "\n")
+          cat("Continuing without plotting.\n"); flush.console()
+        })
+      } else {
+        cat("No peaks available for plotting.\n"); flush.console()
+      }
+      
+    }, error = function(e) {
+      cat("ERROR in processing", group1, "vs", group2, ":", conditionMessage(e), "\n")
+      cat("Skipping this comparison and moving to the next.\n"); flush.console()
+    })
     
-    if (nrow(sig_peaks) == 0) {
-        cat("No significant DA peaks found for", group1, "vs", group2, ". Skipping.\n"); flush.console()
-        
-        # **【优化三】: 即使没有结果，也要清理内存**
-        rm(temp_seurat_subset, da_peaks)
-        gc() # 主动进行垃圾回收
-        next
-    }
-    
-    cat("Annotating all significant peaks...\n"); flush.console()
-    sig_peaks$peak <- rownames(sig_peaks)
-    # 注释时仍然使用完整对象，因为它包含完整的注释信息
-    closest_features_all <- ClosestFeature(pbmc_atac, regions = rownames(sig_peaks))
-    annotated_sig_peaks <- cbind(sig_peaks, closest_features_all[, c("gene_name", "closest_region", "distance")])
-    
-    outcsv_all <- file.path(output_dir, paste0("DApeaks_", group1, "_vs_", group2, "_allsig_annotated.csv"))
-    write.csv(annotated_sig_peaks, outcsv_all, row.names = FALSE)
-    cat("Saved all", nrow(annotated_sig_peaks), "significant peaks to:", outcsv_all, "\n"); flush.console()
-    
-    top_50_pos <- head(annotated_sig_peaks[order(-annotated_sig_peaks$avg_log2FC), ], 50)
-    top_50_neg <- head(annotated_sig_peaks[order(annotated_sig_peaks$avg_log2FC), ], 50)
-    top_50_df <- rbind(top_50_pos, top_50_neg)
-    
-    if (nrow(top_50_df) > 0) {
-        outcsv_top50 <- file.path(output_dir, paste0("DApeaks_", group1, "_vs_", group2, "_top50_annotated.csv"))
-        write.csv(top_50_df, outcsv_top50, row.names = FALSE)
-        cat("Saved top", nrow(top_50_df), "peaks to:", outcsv_top50, "\n"); flush.console()
-    }
-
-    # --- 7. 批量绘制小提琴图 ---
-    cat("Generating violin plots for top 20 peaks...\n"); flush.console()
-    plot_peaks_pos <- head(top_50_df[top_50_df$avg_log2FC > 0, ], 10)
-    plot_peaks_neg <- head(top_50_df[top_50_df$avg_log2FC < 0, ], 10)
-    plot_peaks_df <- rbind(plot_peaks_pos, plot_peaks_neg)
-    
-    if (nrow(plot_peaks_df) > 0) {
-      plot_peaks <- plot_peaks_df$peak
-      vln_plot <- VlnPlot(
-        pbmc_atac,
-        features = plot_peaks,
-        group.by = "predicted.id",
-        pt.size = 0,
-        ncol = 2
-      ) + labs(title = paste(group1, "vs", group2, "(Top 20 Peaks)"))
-      pdf_path <- file.path(plot_dir, paste0("Vln_", group1, "_vs_", group2, "_top20_DApeaks.pdf"))
-      ggsave(pdf_path, vln_plot, width = 12, height = 5 * ceiling(length(plot_peaks) / 2), limitsize = FALSE)
-    }
-    
-    # **【优化三】: 在每次循环结束时，清理掉本次循环产生的临时对象，并进行垃圾回收**
-    rm(temp_seurat_subset, da_peaks, sig_peaks, annotated_sig_peaks, top_50_df, plot_peaks_df)
+    # 【内存优化】: 在每次循环结束时，清理临时对象
+    if (exists("temp_seurat_subset")) rm(temp_seurat_subset)
+    if (exists("da_peaks")) rm(da_peaks)
+    if (exists("sig_peaks")) rm(sig_peaks)
+    if (exists("annotated_sig_peaks")) rm(annotated_sig_peaks)
+    if (exists("top_50_df")) rm(top_50_df)
+    if (exists("plot_peaks_df")) rm(plot_peaks_df)
+    if (exists("vln_plot")) rm(vln_plot)
     gc()
     cat("Finished comparison and cleaned memory.\n\n"); flush.console()
   }
 }
+
 cat("全部分析完成！结果保存在:", output_dir, "\n"); flush.console()
