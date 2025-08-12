@@ -1,0 +1,82 @@
+###基础信息统计
+[1] "数据维度:"
+[1] 33029 35330
+[1] "元数据列名:"
+[1] "orig.ident"   "nCount_RNA"   "nFeature_RNA" "Groups"       "percent.mito"
+[6] "percent.hgb" 
+[1] "细胞类型分布:"
+
+          B cells         CD4 cells         CD8 cells          DC cells 
+             2226              1838              9450               832 
+Endothelial cells  Epithelial cells       Fibroblasts       Macrophages 
+              862               624              1131              6054 
+      Neutrophils          NK cells      Plasma cells 
+             3425               747              8141 
+> # 检查UMAP降维结果的结构
+str(rna_data[["umap"]])
+# 查看UMAP坐标的前几行及其列名
+head(as.data.frame(rna_data[["umap"]]@cell.embeddings))
+Formal class 'DimReduc' [package "SeuratObject"] with 9 slots
+  ..@ cell.embeddings           : num [1:35330, 1:2] 2.16 2.12 1.13 8.86 -4.5 ...
+  .. ..- attr(*, "scaled:center")= num [1:2] 0.61 0.603
+  .. ..- attr(*, "dimnames")=List of 2
+  .. .. ..$ : chr [1:35330] "Day0_1_AAACCCACATAGGCGA" "Day0_1_AAACCCATCCGGGACT" "Day0_1_AAACCCATCGCAATTG" "Day0_1_AAACGAAAGCTCGACC" ...
+  .. .. ..$ : chr [1:2] "umap_1" "umap_2"
+  ..@ feature.loadings          : num[0 , 0 ] 
+  ..@ feature.loadings.projected: num[0 , 0 ] 
+  ..@ assay.used                : chr "RNA"
+  ..@ global                    : logi TRUE
+  ..@ stdev                     : num(0) 
+  ..@ jackstraw                 :Formal class 'JackStrawData' [package "SeuratObject"] with 4 slots
+  .. .. ..@ empirical.p.values     : num[0 , 0 ] 
+  .. .. ..@ fake.reduction.scores  : num[0 , 0 ] 
+  .. .. ..@ empirical.p.values.full: num[0 , 0 ] 
+  .. .. ..@ overall.p.values       : num[0 , 0 ] 
+  ..@ misc                      :List of 1
+  .. ..$ model:List of 24
+  .. .. ..$ embedding           : num [1:35330, 1:2] 2.16 2.12 1.13 8.86 -4.5 ...
+  .. .. .. ..- attr(*, "scaled:center")= num [1:2] 0.61 0.603
+  .. .. .. ..- attr(*, "dimnames")=List of 2
+  .. .. .. .. ..$ : chr [1:35330] "Day0_1_AAACCCACATAGGCGA" "Day0_1_AAACCCATCCGGGACT" "Day0_1_AAACCCATCGCAATTG" "Day0_1_AAACGAAAGCTCGACC" ...
+  .. .. .. .. ..$ : NULL
+  .. .. ..$ scale_info          : NULL
+  .. .. ..$ search_k            : num 3000
+  .. .. ..$ local_connectivity  : int 1
+  .. .. ..$ n_epochs            : num 200
+  .. .. ..$ alpha               : num 1
+  .. .. ..$ negative_sample_rate: int 5
+  .. .. ..$ method              : chr "umap"
+  .. .. ..$ a                   : Named num 0.992
+  .. .. .. ..- attr(*, "names")= chr "a"
+  .. .. ..$ b                   : Named num 1.11
+  .. .. .. ..- attr(*, "names")= chr "b"
+  .. .. ..$ gamma               : num 1
+  .. .. ..$ approx_pow          : logi FALSE
+  .. .. ..$ metric              :List of 1
+  .. .. .. ..$ cosine:List of 1
+  .. .. .. .. ..$ ndim: int 50
+  .. .. ..$ norig_col           : int 50
+  .. .. ..$ pcg_rand            : logi TRUE
+  .. .. ..$ batch               : logi FALSE
+  .. .. ..$ opt_args            :List of 5
+  .. .. .. ..$ alpha : num 1
+  .. .. .. ..$ beta1 : num 0.5
+  .. .. .. ..$ beta2 : num 0.9
+  .. .. .. ..$ eps   : num 1e-07
+  .. .. .. ..$ method: chr "adam"
+  .. .. ..$ num_precomputed_nns : num 0
+  .. .. ..$ min_dist            : num 0.3
+  .. .. ..$ spread              : num 1
+  .. .. ..$ binary_edge_weights : logi FALSE
+  .. .. ..$ seed                : NULL
+  .. .. ..$ n_neighbors         : int 30
+  .. .. ..$ pca_models          : list()
+  ..@ key                       : chr "umap_"
+                            umap_1     umap_2
+Day0_1_AAACCCACATAGGCGA   2.160769 11.0427251
+Day0_1_AAACCCATCCGGGACT   2.123540 -0.5489093
+Day0_1_AAACCCATCGCAATTG   1.127048 -7.1547732
+Day0_1_AAACGAAAGCTCGACC   8.857249 -5.3608198
+Day0_1_AAACGAAAGGTTAAAC  -4.503539 -5.6090249
+Day0_1_AAACGAAAGTTGCCTA -14.076973  4.8855730
+
