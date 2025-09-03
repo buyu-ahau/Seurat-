@@ -1,317 +1,319 @@
-🧬 单细胞RNA测序数据重新注释项目
-📊 项目概述
-项目名称: 单细胞RNA测序数据细胞类型重新注释
-处理时间: 2025-07-08 09:53:17 UTC
-用户: buyu-ahau
-数据规模: 35,330个细胞，33,029个基因，20个clusters
-
-An object of class Seurat 
-33029 features across 35330 samples within 1 assay 
-Active assay: RNA (33029 features, 0 variable features)
- 2 layers present: counts, data
- 11 dimensional reductions calculated: pca, pca_RNA, harmony_RNA, tsne, tsne_harmony_RNA, umap, umap_harmony_RNA, tsne3, tsne3_harmony_RNA, umap3, umap3_harmony_RNA
-                        orig.ident nCount_RNA nFeature_RNA Groups percent.mito
-Day0_1_AAACCCACATAGGCGA     Day0_1      10481         3022   Day0    4.3125656
-Day0_1_AAACCCATCCGGGACT     Day0_1       4734         1970   Day0    2.0278834
-Day0_1_AAACCCATCGCAATTG     Day0_1       7007         2900   Day0    2.7972028
-Day0_1_AAACGAAAGCTCGACC     Day0_1        843          679   Day0    0.4744958
-Day0_1_AAACGAAAGGTTAAAC     Day0_1       7632         3029   Day0   15.5136268
-Day0_1_AAACGAAAGTTGCCTA     Day0_1       7792         3323   Day0    2.7464066
-                        percent.hgb group     S.Score   G2M.Score Phase
-Day0_1_AAACCCACATAGGCGA  0.00000000  Day0 -0.24797287 -0.65619968    G1
-Day0_1_AAACCCATCCGGGACT  0.00000000  Day0 -0.06457320 -0.28059581    G1
-Day0_1_AAACCCATCGCAATTG  0.00000000  Day0 -0.12722984 -0.35322732    G1
-Day0_1_AAACGAAAGCTCGACC  0.00000000  Day0  0.06270087  0.02365137     S
-Day0_1_AAACGAAAGGTTAAAC  0.00000000  Day0  0.57675070  0.70242888   G2M
-Day0_1_AAACGAAAGTTGCCTA  0.01283368  Day0 -0.36228807 -0.41465378    G1
-                        CC.Difference RNA_snn_res.0.5 seurat_clusters
-Day0_1_AAACCCACATAGGCGA    0.40822680               4               4
-Day0_1_AAACCCATCCGGGACT    0.21602262               8               8
-Day0_1_AAACCCATCGCAATTG    0.22599748               0               0
-Day0_1_AAACGAAAGCTCGACC    0.03904950               7               7
-Day0_1_AAACGAAAGGTTAAAC   -0.12567818               6               6
-Day0_1_AAACGAAAGTTGCCTA    0.05236571              16              16
-                               celltype   celltype_final
-Day0_1_AAACCCACATAGGCGA      Macrophage      Macrophages
-Day0_1_AAACCCATCCGGGACT       NK-T_cell        CD4_cells
-Day0_1_AAACCCATCGCAATTG       NK-T_cell        CD8_cells
-Day0_1_AAACGAAAGCTCGACC     Plasma_cell          B_cells
-Day0_1_AAACGAAAGGTTAAAC       NK-T_cell        CD8_cells
-Day0_1_AAACGAAAGTTGCCTA Epithelial_cell Epithelial_cells
- [1] "orig.ident"      "nCount_RNA"      "nFeature_RNA"    "Groups"         
- [5] "percent.mito"    "percent.hgb"     "group"           "S.Score"        
- [9] "G2M.Score"       "Phase"           "CC.Difference"   "RNA_snn_res.0.5"
-[13] "seurat_clusters" "celltype"        "celltype_final" 
-
-          B_cells         CD4_cells         CD8_cells          DC_cells 
-             2226              1838              9450               832 
-Endothelial_cells  Epithelial_cells       Fibroblasts       Macrophages 
-              862               624              1131              6054 
-      Neutrophils          NK_cells      Plasma_cells 
-             3425               747              8141 
-🔄 关键修正说明
-Cluster 18: 从 Unknown_cells → Fibroblasts (88 cells)
-Cluster 19: 从 Unknown_cells → Serous_cells (66 cells)
-📁 生成文件列表
-主要数据文件:
-
-object_final_annotated.qs - 重新注释后的完整Seurat对象
-celltype_summary_corrected.csv - 细胞类型统计摘要
-cluster2celltype_map_corrected.csv - Cluster到细胞类型映射表
-
-
-# 单细胞RNA测序数据重新注释脚本
-# 项目: 细胞类型重新注释 (所有细胞类型名以复数's'结尾)
-# 日期: 2025-07-08
-# 用户: buyu-ahau
-# 
-# 功能描述:
-# 1. 加载已有的Seurat对象
-# 2. 根据预定义映射重新注释细胞类型
-# 3. 修正cluster 18和19的注释
-# 4. 生成统计报告和映射表
-# 5. 保存注释后的对象
-
-library(qs)
+# =============================================
+# scRNA-seq数据UMAP和t-SNE可视化 - 高质量图像输出
+# =============================================
+###来偷学啦?
+# 加载必要的库
 library(Seurat)
+library(ggplot2)
 library(dplyr)
+library(qs)
 
-# ============================================================================
-# 1. 数据加载和基本信息检查
-# ============================================================================
+# 设置工作目录并加载数据
+setwd("/disk192/users_dir/buyu/1.布宇/3.布宇scATAC-seq/signac/流程1")
+rna_data <- qs::qread("rna_final_annotated_new.qs")
 
-# 加载原始数据
-file_path <- "/disk192/users_dir/buyu/2025-7-7重新注释结果/object_annotated_gene_symbols.qs"
-sc_object <- qread(file_path)
+# 检查数据
+print("数据维度:")
+print(dim(rna_data))
+print("元数据列名:")
+print(head(colnames(rna_data@meta.data)))
+print("细胞类型分布:")
+print(table(rna_data$celltype_new))
 
-cat("=" %R% 50, "\n")
-cat("单细胞数据重新注释开始\n")
-cat("=" %R% 50, "\n")
+# =============================================
+# 定义可视化函数
+# =============================================
 
-cat("对象信息:\n")
-print(sc_object)
-
-# 检查现有的cluster信息
-cat("\n现有cluster分布:\n")
-cluster_dist <- table(sc_object$seurat_clusters)
-print(cluster_dist)
-
-cat("\nCluster的唯一值:", sort(unique(as.character(sc_object$seurat_clusters))), "\n")
-
-# ============================================================================
-# 2. 定义细胞类型映射关系
-# ============================================================================
-
-# 定义完整的cluster到celltype映射
-# 注意: cluster 18和19已根据生物学特征重新定义
-final_map <- c(
-  "0" = "CD8_cells",           # T细胞亚群 - 细胞毒性T细胞
-  "1" = "Plasma_cells",        # B细胞分化产物 - 浆细胞
-  "2" = "Plasma_cells",        # B细胞分化产物 - 浆细胞
-  "3" = "Neutrophils",         # 先天免疫细胞 - 中性粒细胞
-  "4" = "Macrophages",         # 先天免疫细胞 - 巨噬细胞
-  "5" = "Macrophages",         # 先天免疫细胞 - 巨噬细胞
-  "6" = "CD8_cells",           # T细胞亚群 - 细胞毒性T细胞
-  "7" = "B_cells",             # 适应性免疫细胞 - B细胞
-  "8" = "CD4_cells",           # T细胞亚群 - 辅助性T细胞
-  "9" = "Fibroblasts",         # 基质细胞 - 成纤维细胞
-  "10" = "DC_cells",           # 抗原呈递细胞 - 树突状细胞
-  "11" = "NK_cells",           # 先天免疫细胞 - 自然杀伤细胞
-  "12" = "Endothelial_cells",  # 血管细胞 - 内皮细胞
-  "13" = "Epithelial_cells",   # 上皮细胞
-  "14" = "Endothelial_cells",  # 血管细胞 - 内皮细胞
-  "15" = "B_cells",            # 适应性免疫细胞 - B细胞
-  "16" = "Epithelial_cells",   # 上皮细胞
-  "17" = "NK_cells",           # 先天免疫细胞 - 自然杀伤细胞
-  "18" = "Fibroblasts",        # 【修正】基质细胞 - 成纤维细胞
-  "19" = "Serous_cells"        # 【修正】分泌细胞 - 浆液性细胞
-)
-
-cat("\n应用的映射关系:\n")
-cat("-" %R% 40, "\n")
-for (i in 1:length(final_map)) {
-  cat(sprintf("Cluster %2s -> %-18s\n", names(final_map)[i], final_map[i]))
-}
-cat("-" %R% 40, "\n")
-
-# ============================================================================
-# 3. 验证映射完整性
-# ============================================================================
-
-# 检查所有cluster是否都有映射
-all_clusters <- sort(unique(as.character(sc_object$seurat_clusters)))
-mapped_clusters <- names(final_map)
-missing_clusters <- setdiff(all_clusters, mapped_clusters)
-
-cat("\n映射验证:\n")
-cat("所有cluster:", paste(all_clusters, collapse = ", "), "\n")
-cat("映射的cluster:", paste(mapped_clusters, collapse = ", "), "\n")
-
-if (length(missing_clusters) > 0) {
-  cat("❌ 警告: 缺失的cluster:", paste(missing_clusters, collapse = ", "), "\n")
-  stop("请为所有cluster定义映射")
-} else {
-  cat("✅ 所有cluster都有对应的映射\n")
-}
-
-# ============================================================================
-# 4. 执行重新注释
-# ============================================================================
-
-cat("\n正在添加新的细胞类型注释...\n")
-
-# 将cluster转换为字符型
-cluster_char <- as.character(sc_object$seurat_clusters)
-
-# 创建细胞类型向量
-celltype_vector <- final_map[cluster_char]
-
-# 检查映射结果
-cat("映射检查:\n")
-cat("  总细胞数:", length(celltype_vector), "\n")
-cat("  成功映射数:", sum(!is.na(celltype_vector)), "\n")
-cat("  NA数量:", sum(is.na(celltype_vector)), "\n")
-
-if (sum(is.na(celltype_vector)) > 0) {
-  na_clusters <- unique(cluster_char[is.na(celltype_vector)])
-  cat("❌ 导致NA的cluster:", paste(na_clusters, collapse = ", "), "\n")
-  stop("存在未映射的cluster")
-} else {
-  cat("✅ 所有细胞都成功映射\n")
-}
-
-# 直接添加到metadata
-sc_object@meta.data$celltype_final <- celltype_vector
-
-# ============================================================================
-# 5. 验证和统计分析
-# ============================================================================
-
-if ("celltype_final" %in% colnames(sc_object@meta.data)) {
-  cat("✅ 成功添加celltype_final列\n")
+# UMAP绘图函数
+plot_modern_umap <- function(seurat_obj, group_by = "seurat_clusters", 
+                            pt_size = 0.5, alpha = 1.0, 
+                            colors = NULL, label = TRUE, 
+                            downsample = FALSE, max_cells = 10000) {
   
-  # 设置新的identity
-  Idents(sc_object) <- "celltype_final"
+  # 提取UMAP坐标
+  umap_data <- as.data.frame(seurat_obj[["umap"]]@cell.embeddings)
+  # 添加分组信息
+  umap_data$group <- seurat_obj@meta.data[[group_by]]
   
-  # 统计细胞类型分布
-  cat("\n" %R% "=" %R% 50, "\n")
-  cat("细胞类型分布统计\n")
-  cat("=" %R% 50, "\n")
-  
-  celltype_counts <- table(sc_object@meta.data$celltype_final)
-  celltype_percent <- prop.table(celltype_counts) * 100
-  
-  summary_table <- data.frame(
-    细胞类型 = names(celltype_counts),
-    细胞数量 = as.integer(celltype_counts),
-    百分比 = sprintf("%.2f%%", celltype_percent),
-    stringsAsFactors = FALSE
-  )
-  
-  # 按细胞数量降序排列
-  summary_table <- summary_table[order(summary_table$细胞数量, decreasing = TRUE), ]
-  
-  # 添加排名
-  summary_table$排名 <- 1:nrow(summary_table)
-  summary_table <- summary_table[, c("排名", "细胞类型", "细胞数量", "百分比")]
-  
-  print(summary_table)
-  
-  # cluster到celltype映射表
-  cat("\n" %R% "=" %R% 50, "\n")
-  cat("Cluster到细胞类型映射表\n")
-  cat("=" %R% 50, "\n")
-  
-  cluster_table <- data.frame(
-    Cluster = sort(unique(as.integer(sc_object$seurat_clusters))),
-    细胞类型 = final_map[as.character(sort(unique(sc_object$seurat_clusters)))],
-    细胞数量 = as.vector(table(sc_object$seurat_clusters)[as.character(sort(unique(sc_object$seurat_clusters)))]),
-    stringsAsFactors = FALSE
-  )
-  print(cluster_table)
-  
-  # 验证每个cluster的映射
-  cat("\n验证cluster映射:\n")
-  cat("-" %R% 50, "\n")
-  
-  all_correct <- TRUE
-  for (cluster in sort(unique(as.character(sc_object$seurat_clusters)))) {
-    expected_celltype <- final_map[cluster]
-    actual_celltypes <- unique(sc_object@meta.data$celltype_final[cluster_char == cluster])
-    cluster_count <- sum(cluster_char == cluster)
+  # 可选的下采样
+  if(downsample && nrow(umap_data) > max_cells) {
+    set.seed(42)
+    cells_per_group <- table(umap_data$group)
+    downsample_data <- data.frame()
     
-    if (length(actual_celltypes) == 1 && actual_celltypes == expected_celltype) {
-      status_icon <- if(cluster %in% c("18", "19")) "🔄" else "✅"
-      cat(sprintf("%s Cluster %2s -> %-18s (%d cells)\n", 
-                  status_icon, cluster, expected_celltype, cluster_count))
+    for(g in unique(umap_data$group)) {
+      group_data <- umap_data[umap_data$group == g,]
+      sample_size <- min(cells_per_group[g], max_cells/length(unique(umap_data$group)))
+      if(nrow(group_data) > sample_size) {
+        group_data <- group_data[sample(nrow(group_data), sample_size),]
+      }
+      downsample_data <- rbind(downsample_data, group_data)
+    }
+    umap_data <- downsample_data
+  }
+  
+  # 如果没有指定颜色，使用默认配色方案
+  if(is.null(colors)) {
+    high_contrast_colors <- c(
+      "#FF0000", "#0000FF", "#00CC00", "#9900CC", "#FF6600", 
+      "#FFCC00", "#663300", "#FF3399", "#666666", "#00CCCC", "#FF9933"
+    )
+    
+    n_groups <- length(unique(umap_data$group))
+    if(n_groups > length(high_contrast_colors)) {
+      colors <- colorRampPalette(high_contrast_colors)(n_groups)
     } else {
-      cat(sprintf("❌ Cluster %s 映射错误\n", cluster))
-      all_correct <- FALSE
+      colors <- high_contrast_colors[1:n_groups]
     }
   }
   
-  if (all_correct) {
-    cat("-" %R% 50, "\n")
-    cat("✅ 所有cluster映射验证通过\n")
+  # 创建基础图层
+  p <- ggplot(umap_data, aes(x = umap_1, y = umap_2, color = group)) +
+    geom_point(size = pt_size, alpha = alpha, stroke = 0) +
+    scale_color_manual(values = colors) +
+    theme_void() +
+    theme(
+      aspect.ratio = 1,
+      legend.position = "right",
+      plot.background = element_rect(fill = "white", color = NA),
+      panel.background = element_rect(fill = "white", color = NA),
+      legend.text = element_text(size = 10),
+      legend.title = element_text(size = 12, face = "bold"),
+      plot.title = element_text(size = 14, face = "bold", hjust = 0.5)
+    ) +
+    coord_fixed() +
+    labs(color = "Cell Type")
+  
+  # 添加标签（可选）
+  if(label) {
+    label_data <- umap_data %>%
+      group_by(group) %>%
+      summarise(
+        x_coord = median(umap_1),
+        y_coord = median(umap_2),
+        .groups = 'drop'
+      )
+    
+    p <- p + 
+      geom_text(data = label_data, 
+               aes(x = x_coord, y = y_coord, label = group),
+               color = "black", size = 4, fontface = "bold",
+               inherit.aes = FALSE)
   }
+  
+  return(p)
+}
 
-# ============================================================================
-# 6. 保存结果
-# ============================================================================
+# t-SNE绘图函数
+plot_modern_tsne <- function(seurat_obj, group_by = "seurat_clusters", 
+                           pt_size = 0.5, alpha = 1.0, 
+                           colors = NULL, label = TRUE, 
+                           downsample = FALSE, max_cells = 10000) {
+  
+  # 提取t-SNE坐标
+  tsne_data <- as.data.frame(seurat_obj[["tsne"]]@cell.embeddings)
+  # 添加分组信息
+  tsne_data$group <- seurat_obj@meta.data[[group_by]]
+  
+  # 可选的下采样
+  if(downsample && nrow(tsne_data) > max_cells) {
+    set.seed(42)
+    cells_per_group <- table(tsne_data$group)
+    downsample_data <- data.frame()
+    
+    for(g in unique(tsne_data$group)) {
+      group_data <- tsne_data[tsne_data$group == g,]
+      sample_size <- min(cells_per_group[g], max_cells/length(unique(tsne_data$group)))
+      if(nrow(group_data) > sample_size) {
+        group_data <- group_data[sample(nrow(group_data), sample_size),]
+      }
+      downsample_data <- rbind(downsample_data, group_data)
+    }
+    tsne_data <- downsample_data
+  }
+  
+  # 如果没有指定颜色，使用默认配色方案
+  if(is.null(colors)) {
+    high_contrast_colors <- c(
+      "#FF0000", "#0000FF", "#00CC00", "#9900CC", "#FF6600", 
+      "#FFCC00", "#663300", "#FF3399", "#666666", "#00CCCC", "#FF9933"
+    )
+    
+    n_groups <- length(unique(tsne_data$group))
+    if(n_groups > length(high_contrast_colors)) {
+      colors <- colorRampPalette(high_contrast_colors)(n_groups)
+    } else {
+      colors <- high_contrast_colors[1:n_groups]
+    }
+  }
+  
+  # 创建基础图层
+  p <- ggplot(tsne_data, aes(x = tSNE_1, y = tSNE_2, color = group)) +
+    geom_point(size = pt_size, alpha = alpha, stroke = 0) +
+    scale_color_manual(values = colors) +
+    theme_void() +
+    theme(
+      aspect.ratio = 1,
+      legend.position = "right",
+      plot.background = element_rect(fill = "white", color = NA),
+      panel.background = element_rect(fill = "white", color = NA),
+      legend.text = element_text(size = 10),
+      legend.title = element_text(size = 12, face = "bold"),
+      plot.title = element_text(size = 14, face = "bold", hjust = 0.5)
+    ) +
+    coord_fixed() +
+    labs(color = "Cell Type")
+  
+  # 添加标签（可选）
+  if(label) {
+    label_data <- tsne_data %>%
+      group_by(group) %>%
+      summarise(
+        x_coord = median(tSNE_1),
+        y_coord = median(tSNE_2),
+        .groups = 'drop'
+      )
+    
+    p <- p + 
+      geom_text(data = label_data, 
+               aes(x = x_coord, y = y_coord, label = group),
+               color = "black", size = 4, fontface = "bold",
+               inherit.aes = FALSE)
+  }
+  
+  return(p)
+}
 
-  cat("\n" %R% "=" %R% 50, "\n")
-  cat("保存结果文件\n")
-  cat("=" %R% 50, "\n")
-  
-  # 保存更新后的Seurat对象
-  output_path <- "/disk192/users_dir/buyu/2025-7-7重新注释结果/object_final_annotated.qs"
-  qsave(sc_object, output_path)
-  cat("✅ 保存Seurat对象到:", output_path, "\n")
-  
-  # 保存统计表格
-  write.csv(summary_table, file = "celltype_summary_corrected.csv", row.names = FALSE)
-  write.csv(cluster_table, file = "cluster2celltype_map_corrected.csv", row.names = FALSE)
-  cat("✅ 保存统计表格到当前目录\n")
-  
-  # ============================================================================
-  # 7. 生成最终报告
-  # ============================================================================
-  
-  cat("\n" %R% "=" %R% 60, "\n")
-  cat("最终注释报告\n")
-  cat("=" %R% 60, "\n")
-  
-  cat("📅 处理时间:", as.character(Sys.time()), "\n")
-  cat("👤 用户:", "buyu-ahau", "\n")
-  cat("🔢 总细胞数:", format(ncol(sc_object), big.mark = ","), "\n")
-  cat("🧬 总基因数:", format(nrow(sc_object), big.mark = ","), "\n")
-  cat("📊 Cluster数:", length(unique(sc_object$seurat_clusters)), "\n")
-  cat("🏷️  细胞类型数:", length(unique(sc_object@meta.data$celltype_final)), "\n")
-  cat("🥇 最大细胞群:", summary_table$细胞类型[1], 
-      sprintf("(%s cells, %s)", 
-              format(summary_table$细胞数量[1], big.mark = ","),
-              summary_table$百分比[1]), "\n")
-  
-  cat("\n🔄 关键修正:\n")
-  cat("   • Cluster 18: 88 cells  -> Fibroblasts\n")
-  cat("   • Cluster 19: 66 cells  -> Serous_cells\n")
-  
-  cat("\n📂 生成文件:\n")
-  cat("   • object_final_annotated.qs - 完整的注释对象\n")
-  cat("   • celltype_summary_corrected.csv - 细胞类型统计\n")
-  cat("   • cluster2celltype_map_corrected.csv - 映射关系表\n")
-  
-  cat("\n=" %R% 60, "\n")
-  cat("✅ 重新注释成功完成！\n")
-  cat("=" %R% 60, "\n")
-  
+# =============================================
+# 设置高质量可视化参数
+# =============================================
+
+# 自定义颜色方案 - 从图片中提取的颜色
+custom_colors <- c(
+  "CD8 cells" = "#ef3f33",       # 红色
+  "CD4 cells" = "#2f5885",       # 深蓝色
+  "B cells" = "#26a870",         # 绿色
+  "Plasma cells" = "#895da7",    # 紫色
+  "NK cells" = "#3c9dd7",        # 天蓝色
+  "DC cells" = "#00a18a",        # 青绿色
+  "Macrophages" = "#f69886",     # 浅红色/粉橙色
+  "Neutrophils" = "#d984b7",     # 粉紫色
+  "Fibroblasts" = "#fdc182",     # 浅橙色
+  "Endothelial cells" = "#a8d490", # 浅绿色
+  "Epithelial cells" = "#d4c1ee"   # 浅紫色
+)
+
+# 创建输出目录
+dir.create("高质量图像输出", showWarnings = FALSE)
+
+# =============================================
+# 生成t-SNE图（如果需要计算）
+# =============================================
+
+if(!"tsne" %in% names(rna_data@reductions)) {
+  print("计算t-SNE降维...")
+  rna_data <- RunTSNE(rna_data, dims = 1:30, perplexity = 30)
+  print("t-SNE计算完成")
 } else {
-  cat("❌ 添加celltype_final列失败\n")
+  print("使用已有的t-SNE结果")
 }
 
-cat("\n🎉 脚本执行完成！\n")
+# =============================================
+# 生成UMAP可视化图像
+# =============================================
 
-# 自定义字符串重复函数
-`%R%` <- function(x, n) {
-  paste(rep(x, n), collapse = "")
+# 带标签的UMAP图
+print("绘制带标签的UMAP图...")
+p1 <- plot_modern_umap(rna_data, group_by = "celltype_new", 
+                      colors = custom_colors, pt_size = 0.7, alpha = 1.0,
+                      label = TRUE) +
+      ggtitle("Cell Type Distribution (UMAP)")
+
+# 保存高分辨率PNG和PDF
+ggsave("高质量图像输出/UMAP_labeled.png", p1, width = 12, height = 10, dpi = 600)
+ggsave("高质量图像输出/UMAP_labeled.pdf", p1, width = 12, height = 10)
+
+# 不带标签的UMAP图
+print("绘制不带标签的UMAP图...")
+p2 <- plot_modern_umap(rna_data, group_by = "celltype_new", 
+                      colors = custom_colors, pt_size = 0.7, alpha = 1.0,
+                      label = FALSE) +
+      ggtitle("Cell Type Distribution (UMAP)")
+
+ggsave("高质量图像输出/UMAP_unlabeled.png", p2, width = 12, height = 10, dpi = 600)
+ggsave("高质量图像输出/UMAP_unlabeled.pdf", p2, width = 12, height = 10)
+
+# 下采样版本的UMAP图
+print("绘制下采样版UMAP图...")
+p3 <- plot_modern_umap(rna_data, group_by = "celltype_new", 
+                      colors = custom_colors, pt_size = 0.7, alpha = 1.0,
+                      label = TRUE, downsample = TRUE, max_cells = 22000) +
+      ggtitle("Cell Type Distribution (UMAP) - Downsampled")
+
+ggsave("高质量图像输出/UMAP_downsampled.png", p3, width = 12, height = 10, dpi = 600)
+ggsave("高质量图像输出/UMAP_downsampled.pdf", p3, width = 12, height = 10)
+
+# =============================================
+# 生成t-SNE可视化图像
+# =============================================
+
+# 带标签的t-SNE图
+print("绘制带标签的t-SNE图...")
+p1_tsne <- plot_modern_tsne(rna_data, group_by = "celltype_new", 
+                          colors = custom_colors, pt_size = 0.7, alpha = 1.0,
+                          label = TRUE) +
+          ggtitle("Cell Type Distribution (t-SNE)")
+
+ggsave("高质量图像输出/tSNE_labeled.png", p1_tsne, width = 12, height = 10, dpi = 600)
+ggsave("高质量图像输出/tSNE_labeled.pdf", p1_tsne, width = 12, height = 10)
+
+# 不带标签的t-SNE图
+print("绘制不带标签的t-SNE图...")
+p2_tsne <- plot_modern_tsne(rna_data, group_by = "celltype_new", 
+                          colors = custom_colors, pt_size = 0.7, alpha = 1.0,
+                          label = FALSE) +
+          ggtitle("Cell Type Distribution (t-SNE)")
+
+ggsave("高质量图像输出/tSNE_unlabeled.png", p2_tsne, width = 12, height = 10, dpi = 600)
+ggsave("高质量图像输出/tSNE_unlabeled.pdf", p2_tsne, width = 12, height = 10)
+
+# 下采样版本的t-SNE图
+print("绘制下采样版t-SNE图...")
+p3_tsne <- plot_modern_tsne(rna_data, group_by = "celltype_new", 
+                          colors = custom_colors, pt_size = 0.7, alpha = 1.0,
+                          label = TRUE, downsample = TRUE, max_cells = 22000) +
+          ggtitle("Cell Type Distribution (t-SNE) - Downsampled")
+
+ggsave("高质量图像输出/tSNE_downsampled.png", p3_tsne, width = 12, height = 10, dpi = 600)
+ggsave("高质量图像输出/tSNE_downsampled.pdf", p3_tsne, width = 12, height = 10)
+
+# =============================================
+# 创建UMAP和t-SNE比较图
+# =============================================
+
+# 加载patchwork包进行图像组合
+if(requireNamespace("patchwork", quietly = TRUE) || install.packages("patchwork")) {
+  library(patchwork)
+  
+  print("创建UMAP和t-SNE比较图...")
+  # 创建UMAP图和t-SNE图用于并排比较
+  umap_plot <- plot_modern_umap(rna_data, group_by = "celltype_new", 
+                              colors = custom_colors, pt_size = 0.7, alpha = 1.0,
+                              label = FALSE, downsample = TRUE, max_cells = 20000) +
+              ggtitle("UMAP") +
+              theme(legend.position = "none")
+  
+  tsne_plot <- plot_modern_tsne(rna_data, group_by = "celltype_new", 
+                              colors = custom_colors, pt_size = 0.7, alpha = 1.0,
+                              label = FALSE, downsample = TRUE, max_cells = 20000) +
+              ggtitle("t-SNE")
+  
+  # 组合图像并共享图例
+  combined_plot <- umap_plot + tsne_plot + plot_layout(ncol = 2)
+  
+  # 保存高分辨率比较图
+  ggsave("高质量图像输出/UMAP_tSNE_comparison.png", combined_plot, width = 18, height = 8, dpi = 600)
+  ggsave("高质量图像输出/UMAP_tSNE_comparison.pdf", combined_plot, width = 18, height = 8)
 }
+
+print("所有图像已保存在'高质量图像输出'文件夹中")
