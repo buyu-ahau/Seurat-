@@ -1,0 +1,598 @@
+#####################################################
+# scATAC-seq Transcription Factor Footprinting Analysis
+#####################################################
+
+## Setup and load required packages
+library(Signac)
+library(Seurat)
+library(ggplot2)
+library(dplyr)
+library(JASPAR2020)
+library(TFBSTools)
+library(GenomicRanges)
+library(BSgenome)
+library(Rsamtools)
+library(rtracklayer)
+library(patchwork)
+library(RColorBrewer)
+library(pheatmap)
+
+## Set output directory
+output_dir <- "/disk192/users_dir/buyu/1.布宇/3.布宇scATAC-seq/footprinting_analysis_results"
+dir.create(output_dir, recursive = TRUE, showWarnings = FALSE)
+log_dir <- file.path(output_dir, "logs")
+dir.create(log_dir, recursive = TRUE, showWarnings = FALSE)
+footprints_dir <- file.path(output_dir, "footprints")
+dir.create(footprints_dir, recursive = TRUE, showWarnings = FALSE)
+
+## Part 1: Load and prepare the data
+# Load the existing Seurat object
+file_path <- "/disk192/users_dir/buyu/1.布宇/3.布宇scATAC-seq/2025.8.14/daa52225-obj.Rda"
+load(file_path)
+loaded_objects <- ls()
+print("工作空间中的对象:")
+print(loaded_objects)
+
+# Check if the loaded object is a Seurat object
+if(exists("obj")) {
+    print("检查'obj'对象:")
+    print(class(obj))
+    
+    if(any(c("Seurat", "SeuratObject") %in% class(obj))) {
+        atac_obj <- obj
+        print("'obj'是一个Seurat对象!")
+    }
+}
+
+if(!exists("atac_obj")) {
+    for(obj_name in loaded_objects) {
+        temp_obj <- get(obj_name)
+        if(any(c("Seurat", "SeuratObject") %in% class(temp_obj))) {
+            atac_obj <- temp_obj
+            print(paste("找到Seurat对象:", obj_name))
+            break
+        }
+    }
+}
+
+# Display basic information about the Seurat object
+print("\n=== Seurat对象信息 ===")
+print(paste("细胞数量:", ncol(atac_obj)))
+print(paste("特征数量:", nrow(atac_obj)))
+
+# Check available assays
+print("\n可用的assays:")
+print(names(atac_obj@assays))
+
+# Check metadata columns
+print("\n元数据列:")
+print(colnames(atac_obj@meta.data))
+
+# Check cell type annotations
+cell_type_cols <- colnames(atac_obj@meta.data)[
+    grepl("cluster|cell|type|ident", colnames(atac_obj@meta.data), ignore.case = TRUE)
+]
+
+print("\n可能的细胞类型列:")
+print(cell_type_cols)
+
+# Check values in potential cell type columns
+for(col in cell_type_cols) {
+    print(paste("\n", col, "的唯一值:"))
+    print(table(atac_obj@meta.data[[col]]))
+}
+
+## Part 2: Update fragment file paths
+# Define fragment file directory and sample names
+fragment_dir <- "/disk192/users_dir/buyu/1.布宇/3.布宇scATAC-seq/2025.8.14/4.fragment文件"
+sample_names <- c("Mhp_1", "Mhp_2", "Mhp_3", "Mock_1", "Mock_2", "Mock_3")
+
+# Check fragment files
+fragment_files <- list.files(fragment_dir, pattern = "\\.fragments\\.tsv\\.gz$", full.names = TRUE)
+print("找到的fragment文件:")
+print(fragment_files)
+
+# Create indices for fragment files if needed
+print("为fragment文件创建索引...")
+indexed_files <- c()
+
+for(file in fragment_files) {
+    # Check if index exists
+    index_file <- paste0(file, ".tbi")
+    if(file.exists(index_file)) {
+        print(paste("索引已存在:", index_file))
+        indexed_files <- c(indexed_files, file)
+    } else {
+        print(paste("为", file, "创建索引..."))
+        tryCatch({
+            # Create index using tabix with correct format
+            cmd <- paste("tabix -p bed", file)
+            system(cmd)
+            
+            # Verify index was created
+            if(file.exists(index_file)) {
+                print(paste("索引创建成功:", index_file))
+                indexed_files <- c(indexed_files, file)
+            } else {
+                print(paste("索引创建失败:", file))
+            }
+        }, error = function(e) {
+            print(paste("创建索引时出错:", e$message))
+        })
+    }
+}
+
+# Check if all files have indices
+if(length(indexed_files) == length(fragment_files)) {
+    print("所有fragment文件都已成功创建索引")
+} else {
+    print(paste("警告: 只有", length(indexed_files), "个文件成功创建了索引，共", length(fragment_files), "个文件"))
+    print("将只使用成功创建索引的文件")
+}
+
+# Sort fragment files according to predefined order
+sorted_files <- character(length(sample_names))
+for(i in seq_along(sample_names)) {
+    pattern <- sample_names[i]
+    file_path <- list.files(fragment_dir, pattern = paste0(pattern, ".fragments.tsv.gz$"), full.names = TRUE)
+    
+    if(length(file_path) == 1) {
+        sorted_files[i] <- file_path
+    } else {
+        stop(paste("找不到或找到多个匹配的文件:", pattern))
+    }
+}
+
+print("按预定义顺序排序后的文件:")
+print(basename(sorted_files))
+
+# Update fragment paths in the Seurat object
+frags <- Fragments(atac_obj[["ATAC"]])
+print("原始fragment对象信息:")
+for(i in seq_along(frags)) {
+    print(paste("Fragment", i, ":", basename(frags[[i]]@path)))
+    print(paste("  细胞数:", length(frags[[i]]@cells)))
+    print(paste("  前几个细胞:", paste(head(frags[[i]]@cells, 3), collapse=", ")))
+}
+
+# Update fragment paths
+for(i in seq_along(frags)) {
+    # New path
+    new_path <- file.path(fragment_dir, paste0(sample_names[i], ".fragments.tsv.gz"))
+    
+    if(file.exists(new_path)) {
+        # Create index if it doesn't exist
+        if(!file.exists(paste0(new_path, ".tbi"))) {
+            system(paste("tabix -p bed", new_path))
+        }
+        
+        # Update path
+        frags[[i]]@path <- new_path
+        print(paste("已更新Fragment", i, "的路径为:", new_path))
+    } else {
+        print(paste("警告: 文件不存在:", new_path))
+    }
+}
+
+# Update the fragments in the Seurat object
+atac_assay <- atac_obj[["ATAC"]]
+atac_assay@fragments <- frags
+atac_obj[["ATAC"]] <- atac_assay
+
+# Save updated object
+updated_obj_file <- file.path(output_dir, "atac_with_updated_fragments.rds")
+saveRDS(atac_obj, updated_obj_file)
+print(paste("已保存更新后的Seurat对象:", updated_obj_file))
+
+# Verify fragment files are accessible
+frags <- Fragments(atac_obj[["ATAC"]])
+print("检查fragment文件是否可访问:")
+for(i in seq_along(frags)) {
+    print(paste("Fragment", i, "路径:", frags[[i]]@path))
+    print(paste("  文件存在:", file.exists(frags[[i]]@path)))
+    print(paste("  索引存在:", file.exists(paste0(frags[[i]]@path, ".tbi"))))
+}
+
+## Part 3: Add motif information to the object
+has_motifs <- FALSE
+tryCatch({
+    motifs <- Motifs(atac_obj)
+    if(!is.null(motifs) && length(motifs@motifs) > 0) {
+        has_motifs <- TRUE
+        print("对象已包含motif信息。")
+    }
+}, error = function(e) {
+    print("对象中不包含有效的motif信息。")
+})
+
+if(!has_motifs) {
+    print("准备添加motif信息...")
+    
+    # 1. Create genome object
+    print("准备基因组对象...")
+    
+    # Use FaFile as genome object
+    genome_path <- "/disk192/users_dir/buyu/2.参考基因组/Sus_scrofa.Sscrofa11.1.dna.toplevel.fa"
+    
+    # Check if index file exists
+    fai_path <- paste0(genome_path, ".fai")
+    if(!file.exists(fai_path)) {
+        print("为FASTA文件创建索引...")
+        Rsamtools::indexFa(genome_path)
+    }
+    
+    # Create FaFile object
+    genome <- FaFile(genome_path)
+    
+    print("基因组对象准备完成。")
+    
+    # 2. Get transcription factor motifs
+    print("获取JASPAR基序...")
+    
+    # Try to get pig-specific motifs
+    pwms <- getMatrixSet(
+        x = JASPAR2020,
+        opts = list(species = "Sus scrofa", collection = "CORE")
+    )
+    
+    # If few pig motifs, add human motifs
+    if(length(pwms) < 50) {
+        print("猪特异基序较少，添加人类基序...")
+        pwms_human <- getMatrixSet(
+            x = JASPAR2020,
+            opts = list(species = "Homo sapiens", collection = "CORE")
+        )
+        
+        # Combine motifs
+        if(length(pwms) > 0) {
+            all_pwms <- c(pwms, pwms_human)
+        } else {
+            all_pwms <- pwms_human
+        }
+        pwms <- all_pwms
+    }
+    
+    print(paste("获取的基序总数:", length(pwms)))
+    
+    # Save motif list for future reference
+    saveRDS(pwms, file.path(output_dir, "jaspar_pwms.rds"))
+    
+    # Extract peaks from ATAC data
+    print("提取峰值区域...")
+    peak_granges <- StringToGRanges(rownames(atac_obj[["ATAC"]]), sep = c(":", "-"))
+    
+    # 3. Add motifs to the object
+    print("将基序添加到Seurat对象...")
+    
+    # Adding motifs may take some time, especially for large genomes
+    start_time <- Sys.time()
+    print(paste("开始添加基序:", start_time))
+    
+    atac_obj <- AddMotifs(
+        object = atac_obj,
+        genome = genome,
+        pfm = pwms
+    )
+    
+    end_time <- Sys.time()
+    print("基序添加成功!")
+    print(paste("基序添加完成，耗时:", difftime(end_time, start_time, units = "mins"), "分钟"))
+    
+    # Save object with added motifs
+    print("保存带有基序的对象...")
+    saveRDS(atac_obj, file.path(output_dir, "atac_with_motifs.rds"))
+} else {
+    print("对象已包含基序信息，跳过添加步骤。")
+}
+
+## Part 4: Verify motif information
+print("验证基序信息...")
+motifs <- Motifs(atac_obj[["ATAC"]])
+print(paste("基序数量:", length(motifs@pwm)))
+print("前几个基序名称:")
+print(head(names(motifs@pwm)))
+
+# Load JASPAR database to map IDs to names
+print("加载JASPAR数据库...")
+tryCatch({
+    jaspar_db <- getMatrixSet(
+        x = JASPAR2020,
+        opts = list(collection = "CORE")
+    )
+    
+    # Create ID to name mapping
+    jaspar_info <- data.frame(
+        ID = sapply(jaspar_db, function(x) ID(x)),
+        name = sapply(jaspar_db, function(x) name(x)),
+        stringsAsFactors = FALSE
+    )
+    
+    print("JASPAR ID到名称的映射示例:")
+    print(head(jaspar_info))
+    
+    # Create lookup dictionary
+    id_to_name <- setNames(jaspar_info$name, jaspar_info$ID)
+    
+    # Convert our motif IDs to names
+    motif_ids <- names(motifs@pwm)
+    motif_names <- sapply(motif_ids, function(id) {
+        # Extract main part of motif ID (remove version number)
+        base_id <- sub("\\.\\d+$", "", id)
+        # Look up name, return ID if not found
+        ifelse(base_id %in% names(id_to_name), id_to_name[base_id], id)
+    })
+    
+    # Create ID to name mapping dictionary
+    motif_id_to_name <- setNames(motif_names, motif_ids)
+    
+    # Save this mapping for later use
+    saveRDS(motif_id_to_name, file.path(output_dir, "motif_id_to_name.rds"))
+}, error = function(e) {
+    print(paste("加载JASPAR数据库时出错:", e$message))
+    print("将使用基序ID作为名称继续。")
+    motif_id_to_name <- setNames(names(motifs@pwm), names(motifs@pwm))
+})
+
+## Part 5: Differential motif enrichment analysis between cell types
+print("可用的细胞类型:")
+cell_types <- unique(atac_obj$seurat_clusters)
+print(cell_types)
+
+# Set B cells and T cells for comparison
+b_cells <- "B_cells"
+t_cells <- "CD4_CD8_T_cells"
+
+# Confirm these cell types exist
+if(!(b_cells %in% cell_types) || !(t_cells %in% cell_types)) {
+    stop("找不到B细胞或T细胞，请检查细胞类型名称。")
+}
+
+print(paste("将进行", b_cells, "和", t_cells, "之间的比较"))
+
+# Load differential peaks
+da_file <- "/disk192/users_dir/buyu/1.布宇/3.布宇scATAC-seq/differential_analysis_results/intermediate_da_peaks/DApeaks_raw_B_cells_vs_CD4_CD8_T_cells.rds"
+da_peaks <- readRDS(da_file)
+print("差异峰数据摘要:")
+print(paste("总差异峰数:", nrow(da_peaks)))
+
+# Filter significant differential peaks
+sig_peaks_b <- rownames(da_peaks[da_peaks$avg_log2FC > 0.5 & da_peaks$p_val_adj < 0.05, ])
+sig_peaks_t <- rownames(da_peaks[da_peaks$avg_log2FC < -0.5 & da_peaks$p_val_adj < 0.05, ])
+print(paste("B细胞特异峰数:", length(sig_peaks_b)))
+print(paste("T细胞特异峰数:", length(sig_peaks_t)))
+
+sig_peaks_data <- list(
+    B_cell_peaks = sig_peaks_b,
+    T_cell_peaks = sig_peaks_t
+)
+saveRDS(sig_peaks_data, file.path(output_dir, "significant_peaks.rds"))
+
+## Part 6: Find enriched motifs in differential peaks
+print("在差异峰中查找富集的转录因子...")
+
+# Analyze B cell-specific peaks
+if(length(sig_peaks_b) > 0) {
+    print("B细胞特异峰的转录因子富集分析...")
+    b_motifs <- FindMotifs(
+        object = atac_obj,
+        features = sig_peaks_b
+    )
+    
+    print("B细胞富集的转录因子:")
+    print(head(b_motifs[order(b_motifs$pvalue), ], 20))
+    
+    # Save results
+    write.csv(b_motifs, file.path(output_dir, "B_cells_motif_enrichment.csv"))
+    saveRDS(b_motifs, file.path(output_dir, "B_cells_motif_enrichment.rds"))
+} else {
+    print("没有足够的B细胞特异峰进行富集分析")
+}
+
+# Analyze T cell-specific peaks
+if(length(sig_peaks_t) > 0) {
+    print("T细胞特异峰的转录因子富集分析...")
+    t_motifs <- FindMotifs(
+        object = atac_obj,
+        features = sig_peaks_t
+    )
+    
+    print("T细胞富集的转录因子:")
+    print(head(t_motifs[order(t_motifs$pvalue), ], 20))
+    
+    # Save results
+    write.csv(t_motifs, file.path(output_dir, "T_cells_motif_enrichment.csv"))
+    saveRDS(t_motifs, file.path(output_dir, "T_cells_motif_enrichment.rds"))
+} else {
+    print("没有足够的T细胞特异峰进行富集分析")
+}
+
+## Part 7: Select top motifs for footprinting analysis
+top_motifs <- c()
+if(exists("b_motifs")) {
+    b_top <- rownames(b_motifs)[order(b_motifs$pvalue)][1:min(5, nrow(b_motifs))]
+    top_motifs <- c(top_motifs, b_top)
+}
+if(exists("t_motifs")) {
+    t_top <- rownames(t_motifs)[order(t_motifs$pvalue)][1:min(5, nrow(t_motifs))]
+    top_motifs <- c(top_motifs, t_top)
+}
+top_motifs <- unique(top_motifs)
+
+print("选择进行足迹分析的转录因子:")
+print(top_motifs)
+
+
+# 第一步：加载更新后的Seurat对象和之前的富集分析结果
+library(Signac)
+library(Seurat)
+library(ggplot2)
+library(GenomicRanges)
+library(BSgenome)
+library(Rsamtools)
+
+# 设置输出目录
+output_dir <- "/disk192/users_dir/buyu/1.布宇/3.布宇scATAC-seq/footprinting_analysis_results"
+footprints_dir <- file.path(output_dir, "footprints")
+dir.create(footprints_dir, recursive = TRUE, showWarnings = FALSE)
+
+# 加载更新后的对象
+atac_obj_file <- file.path(output_dir, "atac_with_updated_fragments.rds")
+atac_obj <- readRDS(atac_obj_file)
+
+# 加载之前的转录因子富集分析结果
+b_motifs <- readRDS(file.path(output_dir, "B_cells_motif_enrichment.rds"))
+t_motifs <- readRDS(file.path(output_dir, "T_cells_motif_enrichment.rds"))
+
+# 查看当前的Seurat对象
+print("Seurat对象基本信息:")
+print(paste("细胞数量:", ncol(atac_obj)))
+print(paste("特征数量:", nrow(atac_obj)))
+print("可用的assays:")
+print(names(atac_obj@assays))
+print("细胞类型分布:")
+print(table(atac_obj$seurat_clusters))
+
+
+# 第二步：选择B细胞和T细胞最显著的转录因子基序
+# 从B细胞和T细胞富集结果中各选择前5个最显著的基序
+b_top <- rownames(b_motifs)[order(b_motifs$pvalue)][1:5]
+t_top <- rownames(t_motifs)[order(t_motifs$pvalue)][1:5]
+
+# 合并为一个不重复的列表
+top_motifs <- unique(c(b_top, t_top))
+
+print("选择进行足迹分析的转录因子:")
+print(top_motifs)
+
+# 确认要比较的细胞类型
+b_cells <- "B_cells"
+t_cells <- "CD4_CD8_T_cells"
+
+print(paste("将比较", b_cells, "和", t_cells, "之间的转录因子足迹"))
+
+######################################
+# 第一部分：准备工作和数据加载
+######################################
+
+# 加载必要的库
+library(Signac)
+library(Seurat)
+library(ggplot2)
+library(GenomicRanges)
+library(BSgenome)
+library(Rsamtools)
+library(Biostrings)
+
+# 设置输出目录
+output_dir <- "/disk192/users_dir/buyu/1.布宇/3.布宇scATAC-seq/footprinting_analysis_results"
+footprints_dir <- file.path(output_dir, "footprints")
+dir.create(footprints_dir, recursive = TRUE, showWarnings = FALSE)
+
+# 加载之前保存的Seurat对象
+atac_obj_file <- file.path(output_dir, "atac_with_updated_fragments.rds")
+atac_obj <- readRDS(atac_obj_file)
+
+# 加载转录因子富集分析结果
+b_motifs <- readRDS(file.path(output_dir, "B_cells_motif_enrichment.rds"))
+t_motifs <- readRDS(file.path(output_dir, "T_cells_motif_enrichment.rds"))
+
+######################################
+# 第二部分：选择转录因子基序
+######################################
+
+# 选择B细胞和T细胞最显著的转录因子基序
+b_top <- rownames(b_motifs)[order(b_motifs$pvalue)][1:5]
+t_top <- rownames(t_motifs)[order(t_motifs$pvalue)][1:5]
+
+# 合并为一个不重复的列表
+top_motifs <- unique(c(b_top, t_top))
+print("选择进行足迹分析的转录因子:")
+print(top_motifs)
+
+# 确认要比较的细胞类型
+b_cells <- "B_cells"
+t_cells <- "CD4_CD8_T_cells"
+print(paste("将比较", b_cells, "和", t_cells, "之间的转录因子足迹"))
+
+######################################
+# 第三部分：准备基因组对象
+######################################
+
+print("创建基因组对象...")
+genome_path <- "/disk192/users_dir/buyu/2.参考基因组/Sus_scrofa.Sscrofa11.1.dna.toplevel.fa"
+
+# 检查基因组文件是否存在
+print(paste("基因组文件存在:", file.exists(genome_path)))
+
+# 创建FaFile对象
+genome <- FaFile(genome_path)
+print("基因组对象准备完成。")
+
+######################################
+# 第四部分：足迹分析
+######################################
+
+print("开始执行足迹分析...")
+start_time <- Sys.time()
+print(paste("开始时间:", start_time))
+
+# 针对基序MA0669.1进行足迹分析
+success_motif <- "MA0669.1"
+print(paste("分析基序:", success_motif))
+
+# 执行足迹分析
+footprint_data <- Footprint(
+  object = atac_obj,
+  motif.name = success_motif,
+  assay = "ATAC",
+  group.by = "seurat_clusters",
+  idents = c(b_cells, t_cells),
+  upstream = 500,
+  downstream = 500,
+  genome = genome
+)
+
+# 保存结果
+result_file <- file.path(output_dir, paste0("footprint_", success_motif, ".rds"))
+saveRDS(footprint_data, result_file)
+print(paste("成功完成", success_motif, "的足迹分析"))
+
+end_time <- Sys.time()
+print(paste("足迹分析完成，耗时:", difftime(end_time, start_time, units = "mins"), "分钟"))
+
+######################################
+# 第五部分：足迹数据可视化
+######################################
+
+print(paste("尝试绘制基序", success_motif, "的足迹图"))
+
+# 加载足迹数据（如果需要）
+footprint_data <- readRDS(result_file)
+
+# 检查footprint_data对象的类型和结构
+print("足迹数据类型:")
+print(class(footprint_data))
+
+# 使用Signac的PlotFootprint函数创建足迹图
+p <- PlotFootprint(
+  object = footprint_data,  # 直接使用footprint_data对象
+  features = success_motif,
+  idents = c(b_cells, t_cells),
+  group.by = "seurat_clusters"
+)
+
+# 保存图像
+pdf_file <- file.path(footprints_dir, paste0("footprint_", gsub(":", "_", success_motif), ".pdf"))
+png_file <- file.path(footprints_dir, paste0("footprint_", gsub(":", "_", success_motif), ".png"))
+
+pdf(pdf_file, width = 10, height = 8)
+print(p)
+dev.off()
+
+png(png_file, width = 1200, height = 800, res = 150)
+print(p)
+dev.off()
+
+print(paste("已保存", success_motif, "的足迹图"))
+
+print("足迹分析和可视化完成！")

@@ -1,0 +1,190 @@
+# 统计所有细胞类型中显著富集的转录因子
+library(dplyr)
+library(ggplot2)
+library(pheatmap)
+library(RColorBrewer)
+
+# 设置路径
+input_dir <- "/disk192/users_dir/buyu/1.布宇/3.布宇scATAC-seq/motif_enrichment_results"
+output_dir <- "/disk192/users_dir/buyu/1.布宇/3.布宇scATAC-seq/motif_enrichment_summary"
+dir.create(output_dir, recursive = TRUE, showWarnings = FALSE)
+
+# 获取所有细胞类型
+cell_types <- c("B_cells", "CD4_CD8_T_cells", "Endothelial_cells", "Epithelial_cells", 
+               "Fibroblasts", "Macrophages", "Neutrophils", "NK_cells", "Plasma_cells")
+
+# 定义显著性阈值
+p_value_threshold <- 0.05
+fold_enrichment_threshold <- 1.5
+
+# 初始化数据框来存储所有显著富集的转录因子
+all_significant_tfs <- data.frame()
+
+# 为每种细胞类型读取数据
+for (cell_type in cell_types) {
+  # 尝试读取RDS文件
+  motif_file <- file.path(input_dir, paste0(cell_type, "_motif_enrichment.rds"))
+  
+  if (file.exists(motif_file)) {
+    motifs <- readRDS(motif_file)
+    
+    # 筛选显著富集的转录因子
+    sig_motifs <- motifs %>%
+      filter(p.adjust < p_value_threshold & fold.enrichment >= fold_enrichment_threshold) %>%
+      mutate(cell_type = cell_type)
+    
+    # 添加到汇总数据框
+    all_significant_tfs <- rbind(all_significant_tfs, sig_motifs)
+    
+    # 打印统计信息
+    cat(paste0("细胞类型: ", cell_type, " 显著富集的转录因子数量: ", nrow(sig_motifs), "\n"))
+  } else {
+    warning(paste0("找不到文件: ", motif_file))
+  }
+}
+
+# 保存所有显著富集的转录因子
+write.csv(all_significant_tfs, file.path(output_dir, "all_significant_tfs.csv"), row.names = FALSE)
+
+# 统计每个转录因子在多少种细胞类型中显著富集
+tf_stats <- all_significant_tfs %>%
+  group_by(motif.name) %>%
+  summarise(
+    cell_type_count = n_distinct(cell_type),
+    avg_fold_enrichment = mean(fold.enrichment),
+    min_p_adjust = min(p.adjust),
+    cell_types = paste(sort(unique(cell_type)), collapse = ", ")
+  ) %>%
+  arrange(desc(cell_type_count), desc(avg_fold_enrichment))
+
+# 保存统计结果
+write.csv(tf_stats, file.path(output_dir, "tf_enrichment_statistics.csv"), row.names = FALSE)
+
+# 创建转录因子在不同细胞类型中的富集情况热图数据
+tf_cell_matrix <- all_significant_tfs %>%
+  select(motif.name, cell_type, fold.enrichment) %>%
+  tidyr::pivot_wider(
+    names_from = cell_type,
+    values_from = fold.enrichment,
+    values_fill = 0
+  )
+
+# 选择富集在至少3种细胞类型中的转录因子
+popular_tfs <- tf_stats %>%
+  filter(cell_type_count >= 3) %>%
+  pull(motif.name)
+
+# 如果数量太多，限制为前50个
+if (length(popular_tfs) > 50) {
+  popular_tfs <- tf_stats %>%
+    filter(cell_type_count >= 3) %>%
+    head(50) %>%
+    pull(motif.name)
+}
+
+# 提取这些转录因子的数据
+tf_cell_subset <- tf_cell_matrix %>%
+  filter(motif.name %in% popular_tfs)
+
+# 转换为矩阵格式
+matrix_data <- as.matrix(tf_cell_subset[, -1])
+rownames(matrix_data) <- tf_cell_subset$motif.name
+
+# 创建热图
+pdf(file.path(output_dir, "tf_enrichment_heatmap.pdf"), width = 12, height = 16)
+pheatmap(
+  matrix_data,
+  color = colorRampPalette(c("white", "red"))(100),
+  cluster_rows = TRUE,
+  cluster_cols = TRUE,
+  main = "Transcription Factor Enrichment Across Cell Types",
+  fontsize_row = 8,
+  fontsize_col = 10,
+  display_numbers = FALSE
+)
+dev.off()
+
+# 统计每种细胞类型特异的转录因子（只在该细胞类型中富集）
+cell_specific_tfs <- tf_stats %>%
+  filter(cell_type_count == 1) %>%
+  arrange(cell_types, desc(avg_fold_enrichment))
+
+# 保存细胞类型特异的转录因子
+write.csv(cell_specific_tfs, file.path(output_dir, "cell_type_specific_tfs.csv"), row.names = FALSE)
+
+# 为每种细胞类型创建Top 20转录因子表
+for (cell_type in cell_types) {
+  top_tfs <- all_significant_tfs %>%
+    filter(cell_type == !!cell_type) %>%
+    arrange(p.adjust) %>%
+    head(20)
+  
+  write.csv(top_tfs, file.path(output_dir, paste0(cell_type, "_top20_tfs.csv")), row.names = FALSE)
+}
+
+# 创建细胞类型间共有和特有的转录因子维恩图数据
+cell_type_tf_sets <- list()
+for (cell_type in cell_types) {
+  cell_type_tf_sets[[cell_type]] <- all_significant_tfs %>%
+    filter(cell_type == !!cell_type) %>%
+    pull(motif.name) %>%
+    unique()
+}
+
+# 保存维恩图数据
+saveRDS(cell_type_tf_sets, file.path(output_dir, "venn_diagram_data.rds"))
+
+# 输出共有转录因子（在所有细胞类型中都富集的）
+if (length(cell_types) > 0) {
+  common_tfs <- Reduce(intersect, cell_type_tf_sets)
+  if (length(common_tfs) > 0) {
+    common_tf_stats <- tf_stats %>%
+      filter(motif.name %in% common_tfs) %>%
+      arrange(desc(avg_fold_enrichment))
+    
+    write.csv(common_tf_stats, file.path(output_dir, "common_tfs_all_cell_types.csv"), row.names = FALSE)
+    cat(paste0("在所有细胞类型中共同富集的转录因子数量: ", length(common_tfs), "\n"))
+  } else {
+    cat("没有在所有细胞类型中共同富集的转录因子\n")
+  }
+}
+
+# 创建每个转录因子的富集水平柱状图（选择前20个在多个细胞类型中富集的转录因子）
+top_shared_tfs <- tf_stats %>%
+  filter(cell_type_count > 1) %>%
+  arrange(desc(cell_type_count), desc(avg_fold_enrichment)) %>%
+  head(20) %>%
+  pull(motif.name)
+
+for (tf in top_shared_tfs) {
+  tf_data <- all_significant_tfs %>%
+    filter(motif.name == tf)
+  
+  p <- ggplot(tf_data, aes(x = reorder(cell_type, -fold.enrichment), y = fold.enrichment, fill = -log10(p.adjust))) +
+    geom_bar(stat = "identity") +
+    scale_fill_gradient(low = "lightblue", high = "darkblue") +
+    labs(
+      title = paste0("富集水平: ", tf),
+      x = "细胞类型",
+      y = "富集倍数",
+      fill = "-log10(p.adjust)"
+    ) +
+    theme_minimal() +
+    theme(axis.text.x = element_text(angle = 45, hjust = 1))
+  
+  ggsave(file.path(output_dir, paste0("tf_enrichment_", gsub(":", "_", tf), ".pdf")), p, width = 10, height = 6)
+}
+
+# 输出摘要信息
+cat("\n分析完成！结果保存在:", output_dir, "\n")
+cat("生成的文件包括:\n")
+cat("- all_significant_tfs.csv: 所有显著富集的转录因子\n")
+cat("- tf_enrichment_statistics.csv: 转录因子富集统计\n")
+cat("- tf_enrichment_heatmap.pdf: 多细胞类型转录因子富集热图\n")
+cat("- cell_type_specific_tfs.csv: 细胞类型特异的转录因子\n")
+cat("- {cell_type}_top20_tfs.csv: 每种细胞类型的前20个转录因子\n")
+cat("- common_tfs_all_cell_types.csv: 所有细胞类型共有的转录因子\n")
+cat("- tf_enrichment_{TF}.pdf: 每个主要转录因子的富集柱状图\n")
+
+
+
