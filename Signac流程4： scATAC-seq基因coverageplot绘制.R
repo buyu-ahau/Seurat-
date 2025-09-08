@@ -25,21 +25,84 @@ print(head(seqlevels(pig_annotation_from_gtf)))
 # 此时，obj_relinked对象本身没有被修改，我们只是给它加上了格式完全匹配的注释
 Annotation(obj_relinked) <- pig_annotation_from_gtf
 # --- 步骤 4: 绘制BHLHE40的Coverage Plot ---
-cat("--- 步骤 4: 正在为基因BHLHE40绘制覆盖度图...\n")
-# 现在，所有坐标系统都已统一，绘图将成功执行
-p <- CoveragePlot(
-  object = obj_relinked,
-  region = "BHLHE40",
-  group.by = "seurat_clusters",
-  extend.upstream = 2000,
-  extend.downstream = 1000
+# ===================================================================
+# 步骤 1: 定义文件路径并读取您的数据
+# ===================================================================
+# 这是您提供的文件路径，请再次确认它是否准确无误
+file_path <- "/disk192/users_dir/buyu/1.布宇/3.布宇scATAC-seq/2025.8.14/obj_relinked_annotated.rds"
+# 我们将加载的对象命名为 obj_atac
+print("正在加载数据，请稍候...")
+obj_atac <- readRDS(file_path)
+# (推荐) 打印对象的基本信息，确认数据已成功加载
+print("数据加载成功！对象摘要如下：")
+print(obj_atac)
+
+print(Annotation(obj_atac))
+# 将基因名称 "BHLHE40" 赋值给一个变量 roi
+roi <- "CD19"
+print(paste("已设定目标基因为:", roi))
+# 调用 CoveragePlot 函数进行绘图
+print("正在生成 Coverage Plot...")
+p_extended <- CoveragePlot(
+  object = obj_atac,
+  region = roi,
+  extend.upstream = 2000,   # <--- 新增：向上游（左侧）扩展 2000 bp
+  extend.downstream = 2000, # <--- 新增：向下游（右侧）扩展 2000 bp
+  annotation = TRUE,        # 显示基因结构注释
+  peaks = TRUE,             # 显示已识别的 Peaks
+  tile = TRUE               # 显示 Tile 图，展示片段密度
 )
-# 美化并展示图像
-p_styled <- p + theme_classic(base_size = 12) +
-            labs(title = "BHLHE40 Gene Locus Chromatin Accessibility",
-                 subtitle = "Grouped by Cell Type (seurat_clusters)")
-print(p_styled)
-# Save as PDF
-ggsave(filename = "BHLHE40_coverage_plot.pdf", plot = p, width = 12, height = 10)
-# Save as PNG with high resolution
-ggsave(filename = "BHLHE40_coverage_plot.png", plot = p, width = 12, height = 10, dpi = 300)
+print(p_extended)
+ggsave("CD19_CoveragePlot.png", plot = p_extended, width = 8, height = 6, dpi = 300)
+ggsave("CD19_CoveragePlot.pdf", plot = p_extended, width = 8, height = 6)
+
+
+
+
+
+# --- (前面步骤的代码保持不变) ---
+#scRNA-seq合并CD4与CD8细胞绘制小提琴图
+# --- 步骤 0 到 3: 加载、合并、定义顺序和颜色 ---
+library(Seurat)
+library(qs)
+library(ggplot2)
+library(stringr)
+
+qs_file_path <- "/disk192/users_dir/buyu/1.布宇/3.布宇scATAC-seq/2025.8.14/1.scRNA-seq数据/rna_final_annotated_updated.qs"
+obj_rna <- qread(qs_file_path)
+
+obj_rna$celltype_plot <- as.character(obj_rna$celltype)
+obj_rna$celltype_plot[obj_rna$celltype_plot == "CD4 cells" | obj_rna$celltype_plot == "CD8 cells"] <- "CD4_CD8_T_cells"
+obj_rna$celltype_plot <- str_replace_all(obj_rna$celltype_plot, " ", "_")
+
+celltype_order <- c("B_cells", "CD4_CD8_T_cells", "DC_cells", "Endothelial_cells", "Epithelial_cells", "Fibroblasts", "Macrophages", "Neutrophils", "NK_cells", "Plasma_cells")
+color_palette <- c("B_cells"="#e85c59", "CD4_CD8_T_cells"="#d99a00", "DC_cells"="#a9a9a9", "Endothelial_cells"="#a3b300", "Epithelial_cells"="#00b553", "Fibroblasts"="#00bfc4", "Macrophages"="#00b8e5", "Neutrophils"="#619cff", "NK_cells"="#d378f0", "Plasma_cells"="#f876aa")
+obj_rna$celltype_plot <- factor(obj_rna$celltype_plot, levels = celltype_order)
+
+# --- 步骤 4: 筛选并绘图 (与之前相同) ---
+bhlhe40_expression <- GetAssayData(obj_rna, assay = "RNA", slot = "data")["BHLHE40", ]
+cells_with_expression <- names(bhlhe40_expression[bhlhe40_expression > 0])
+obj_rna_subset <- subset(obj_rna, cells = cells_with_expression)
+
+vln_plot_filtered <- VlnPlot(
+  object = obj_rna_subset,
+  features = "BHLHE40",
+  group.by = "celltype_plot", 
+  pt.size = 0, 
+  cols = color_palette 
+) +
+  labs(
+    title = "BHLHE40 Expression (Cells with >0 Expression)",
+    x = NULL, 
+    y = "Expression Level"
+  ) +
+  theme(
+    plot.title = element_text(hjust = 0.5, face = "bold", size = 16),
+    axis.text.x = element_text(angle = 45, hjust = 1, size = 12),
+    axis.text.y = element_text(size = 12),
+    legend.position = "none"
+  ) +
+  scale_y_continuous(expand = expansion(mult = c(0.01, 0.05)))
+print(vln_plot_filtered)
+ggsave("BHLHE40_vlnplot.pdf", plot = vln_plot_filtered, width = 8, height = 6)
+ggsave("BHLHE40_vlnplot.png", plot = vln_plot_filtered, width = 8, height = 6, dpi = 300)
