@@ -317,3 +317,64 @@ if(requireNamespace("patchwork", quietly = TRUE) || install.packages("patchwork"
 }
 
 print("所有图像已保存在'高质量图像输出'文件夹中")
+
+
+
+#云雨图
+# 1. 加载所有必要的包
+#    确保 Seurat, ggplot2, 和 dplyr 都被加载
+library(Seurat)
+library(ggplot2)
+library(dplyr) # <--- 就是这行，加载了它 R 才能认识 %>%
+
+# 2. 从Seurat对象'rna_obj'准备绘图数据框
+plotting_df_rna <- rna_obj@reductions$umap_harmony_RNA@cell.embeddings %>%
+  as.data.frame() %>%
+  select(UMAP_1 = 1, UMAP_2 = 2) %>%
+  merge(rna_obj@meta.data, by = 0) %>%
+  rename(Cluster = celltype) %>%
+  select(UMAP_1, UMAP_2, Cluster)
+
+# 3. 定义颜色方案
+color_palette_rna <- c(
+  "#919ac2", "#ffac98", "#70a4c8", "#a5a9af", "#63917d", "#dbd1b4",
+  "#6e729a", "#9ba4bd", "#c5ae5f", "#b9b8d6", "#f0a5a3"
+)
+
+# 4. 使用ggplot2绘图
+umap_plot_rna <- ggplot(plotting_df_rna, aes(x = UMAP_1, y = UMAP_2, color = Cluster)) +
+  geom_point(size = 0.2, shape = 16) +
+  scale_color_manual(values = color_palette_rna) +
+  theme_classic() +
+  theme(
+    plot.background = element_blank(),
+    panel.grid = element_blank(),
+    axis.text = element_blank(),
+    axis.ticks = element_blank(),
+    axis.line = element_line(
+      colour = "black",
+      linewidth = 0.5,
+      arrow = arrow(length = unit(0.2, "cm"))
+    ),
+    aspect.ratio = 1,
+    legend.position = "right"
+  ) +
+  guides(color = guide_legend(override.aes = list(size = 3)))
+
+# 5. 保存图片
+ggsave(
+  filename = "/disk192/users_dir/buyu/1.布宇/3.布宇scATAC-seq/2025.8.14/scRNA-seq云雾图UMAP.png",
+  plot = umap_plot_rna,
+  height = 6,
+  width = 8,
+  dpi = 300,
+  bg = "white"
+)
+
+ggsave(
+  filename = "/disk192/users_dir/buyu/1.布宇/3.布宇scATAC-seq/2025.8.14/scRNA-seq云雾图UMAP.pdf",
+  plot = umap_plot_rna,
+  height = 6,
+  width = 8
+)
+cat("scRNA-seq UMAP 图片已成功保存。\n")
