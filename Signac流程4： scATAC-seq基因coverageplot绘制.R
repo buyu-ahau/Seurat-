@@ -3,12 +3,14 @@
 # 1. 遵循最正确的原则：保持原始Seurat对象的坐标系统不变。
 # 2. 将从外部GTF文件加载的基因注释，强制转换为与Seurat对象一致的Ensembl命名风格 ('1', 23456'13'...)。
 # 3. 最终成功为目标基因BHLHE40绘制覆盖度图。
-# conda activate signac_motif----------------------------------------------------------------
+# ----------------------------------------------------------------
+###!!!!!!!!!conda activate signac_motif
 library(Signac)
 library(Seurat)
 library(rtracklayer)
 library(GenomicRanges)
 library(ggplot2)
+library(qs)
 # 加载Seurat对象
 load("/disk192/users_dir/buyu/1/布宇/3/布宇scATAC-seq/2025.8.14/daa52225-obj-relinked-final.Rda")
 # 从本地GTF文件导入基因注释
@@ -29,14 +31,6 @@ Annotation(obj_relinked) <- pig_annotation_from_gtf
 # 步骤 1: 定义文件路径并读取您的数据
 # ===================================================================
 # 这是您提供的文件路径，请再次确认它是否准确无误
-#conda activate signac
-library(Signac)
-library(Seurat)
-library(ggplot2)
-# ===================================================================
-# 步骤 1: 定义文件路径并读取您的数据
-# ===================================================================
-# 这是您提供的文件路径，请再次确认它是否准确无误
 file_path <- "/disk192/users_dir/buyu/1.布宇/3.布宇scATAC-seq/2025.8.14/obj_relinked_annotated.rds"
 # 我们将加载的对象命名为 obj_atac
 print("正在加载数据，请稍候...")
@@ -47,7 +41,7 @@ print(obj_atac)
 
 print(Annotation(obj_atac))
 # 将基因名称 "BHLHE40" 赋值给一个变量 roi
-roi <- "CA4"
+roi <- "BHLHE40"
 print(paste("已设定目标基因为:", roi))
 # 调用 CoveragePlot 函数进行绘图
 print("正在生成 Coverage Plot...")
@@ -61,10 +55,14 @@ p_extended <- CoveragePlot(
   tile = TRUE               # 显示 Tile 图，展示片段密度
 )
 print(p_extended)
-ggsave("CA4_CoveragePlot.png", plot = p_extended, width = 8, height = 6, dpi = 300)
-ggsave("CA4_CoveragePlot.pdf", plot = p_extended, width = 8, height = 6)
+ggsave("BHLHE40_CoveragePlot.png", plot = p_extended, width = 8, height = 6, dpi = 300)
+ggsave("BHLHE40_CoveragePlot.pdf", plot = p_extended, width = 8, height = 6)
 
-# ===================================================================
+
+
+
+
+# --- (前面步骤的代码保持不变) ---
 #scRNA-seq合并CD4与CD8细胞绘制小提琴图
 # --- 步骤 0 到 3: 加载、合并、定义顺序和颜色 ---
 library(Seurat)
