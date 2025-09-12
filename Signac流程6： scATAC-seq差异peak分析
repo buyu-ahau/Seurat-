@@ -151,3 +151,187 @@ cat("\n差异分析完成！所有结果已保存到:", output_dir, "\n")
 
 # 关闭并行计算
 plan(sequential)
+
+
+
+
+
+#####motif分析后   TF热图绘制
+# (确保您已经加载了这些库)
+library(dplyr)
+library(pheatmap)
+library(RColorBrewer)
+library(tidyr)
+
+# 定义颜色 (放到循环外)
+plot_colors <- list(
+  Control = colorRampPalette(brewer.pal(n = 9, name = "Blues"))(100),
+  Infected = colorRampPalette(brewer.pal(n = 9, name = "YlOrRd"))(100)
+)
+# 沿用您指定的这份代码的逻辑
+conditions <- c("Control", "Infected")
+
+for(condition_to_plot in conditions) {
+  
+  cat(paste0("--- 开始处理: ", condition_to_plot, " ---\n"))
+  
+  # 1. 筛选当前条件的数据
+  condition_results <- all_results[all_results$condition == condition_to_plot,]
+  if(nrow(condition_results) == 0) {
+    cat(paste0("警告: 未找到 ", condition_to_plot, " 组的任何数据。\n")); next
+  }
+  
+  # 2. 筛选p值显著的TFs
+  sig_tfs <- condition_results[condition_results$"P-value" < 0.05,]
+  if(nrow(sig_tfs) == 0) {
+    cat(paste0("警告: 在 ", condition_to_plot, " 组中未找到p<0.05的显著富集TFs。\n")); next
+  }
+  
+  # 3. 为每个细胞类型选择Top 15的TFs
+  top_tfs <- sig_tfs %>%
+    group_by(cell_type) %>%
+    slice_min(order_by = `P-value`, n = 15) %>%
+    ungroup()
+  if(nrow(top_tfs) == 0) {
+    cat(paste0("警告: 在 ", condition_to_plot, " 组中筛选Top 15 TFs后结果为空。\n")); next
+  }
+
+  # 4. 创建热图矩阵 (TF x 细胞)
+  heatmap_data <- top_tfs %>%
+    select(cell_type, `Motif Name`, `Log P-value`) %>%
+    mutate(value = -`Log P-value`) %>%
+    select(-`Log P-value`) %>%
+    pivot_wider(names_from = cell_type, values_from = value, values_fill = 0) %>%
+    as.data.frame()
+  rownames(heatmap_data) <- heatmap_data$`Motif Name`
+  heatmap_data <- heatmap_data[,-1] %>% as.matrix()
+
+  # 5. 过滤掉只在1个细胞中富集的TF
+  keep_rows <- rowSums(heatmap_data > 0) >= 2
+  heatmap_data_filtered <- heatmap_data[keep_rows, , drop = FALSE]
+  
+  # 检查过滤后是否还有足够的数据
+  if(nrow(heatmap_data_filtered) < 2 || ncol(heatmap_data_filtered) < 2) {
+      cat("数据不足，无法进行聚类和绘图。\n"); next
+  }
+
+  # 6. 简化TF名称
+  short_tf_names <- sub("[(/].*", "", rownames(heatmap_data_filtered))
+  rownames(heatmap_data_filtered) <- short_tf_names
+  
+  # 7. 转置矩阵 (细胞 x TF)
+  heatmap_data_transposed <- t(heatmap_data_filtered)
+  
+  # ---【核心修改从这里开始】---
+  
+  cat("正在计算聚类排序...\n")
+  
+  # 8. 【第1步】在后台对包含0的原始数据进行聚类，以获取排序树
+  # silent = TRUE 是关键，它只计算，不画图
+  clustering_results <- pheatmap(
+    heatmap_data_transposed,
+    cluster_rows = TRUE,
+    cluster_cols = TRUE,
+    silent = TRUE 
+  )
+  
+  # 9. 【第2步】准备用于绘图的矩阵：将0替换为NA
+  plot_matrix <- heatmap_data_transposed
+  plot_matrix[plot_matrix == 0] <- NA
+  
+  cat("正在生成最终热图...\n")
+  
+  # 10. 【第3步】使用预先计算好的聚类树来绘制带NA的矩阵
+  pheatmap(
+    plot_matrix, # 使用带NA的矩阵进行绘图
+    color = plot_colors[[condition_to_plot]],
+    main = paste("Enriched Motifs in Peaks Up in", condition_to_plot),
+    
+    # --- 美化参数 ---
+    na_col = "white",      # 将NA值设为白色背景
+    cellwidth = 12,        # 设置格子宽度
+    cellheight = 12,       # 设置格子高度
+    border_color = "grey80",
+    fontsize = 8,
+    angle_col = 90,
+    
+    # --- 关键：使用预计算的聚类结果 ---
+    cluster_rows = clustering_results$tree_row,
+    cluster_cols = clustering_results$tree_col,
+    
+    filename = paste0("TF_enrichment_", condition_to_plot, "_final_v2.pdf")
+  )
+  # ---【核心修改在这里结束】---
+}
+
+cat("--- 所有热图处理完成！ ---\n")
+
+
+
+
+# --- 2. 循环绘图 ---
+
+# 【核心修改】定义颜色时，截取调色板，跳过最浅的颜色
+plot_colors <- list(
+  # 对于蓝色系，我们从第3种蓝色开始，到第9种结束
+  Control = colorRampPalette(brewer.pal(n = 9, name = "Blues")[3:9])(100),
+  # 对于黄橙红系，也从第3种颜色（橙色）开始，跳过最浅的黄色
+  Infected = colorRampPalette(brewer.pal(n = 9, name = "YlOrRd")[3:9])(100)
+)
+
+# 沿用您指定的这份代码的逻辑
+conditions <- c("Control", "Infected")
+
+for(condition_to_plot in conditions) {
+  # ... (您之前脚本中循环内部的数据准备部分保持不变) ...
+  # 为了代码完整性，我将整个循环都贴在下方，您直接复制替换即可
+  
+  cat(paste0("--- 开始处理: ", condition_to_plot, " ---\n"))
+  
+  # 1. 数据准备
+  condition_results <- all_results[all_results$condition == condition_to_plot,]
+  if(nrow(condition_results) == 0) { next }
+  sig_tfs <- condition_results[condition_results$"P-value" < 0.05,]
+  if(nrow(sig_tfs) == 0) { next }
+  top_tfs <- sig_tfs %>% group_by(cell_type) %>% slice_min(order_by = `P-value`, n = 15) %>% ungroup()
+  if(nrow(top_tfs) == 0) { next }
+  heatmap_data <- top_tfs %>% select(cell_type, `Motif Name`, `Log P-value`) %>% mutate(value = -`Log P-value`) %>% select(-`Log P-value`) %>% pivot_wider(names_from = cell_type, values_from = value, values_fill = 0) %>% as.data.frame()
+  rownames(heatmap_data) <- heatmap_data$`Motif Name`
+  heatmap_data <- heatmap_data[,-1] %>% as.matrix()
+  keep_rows <- rowSums(heatmap_data > 0) >= 2
+  heatmap_data_filtered <- heatmap_data[keep_rows, , drop = FALSE]
+  if(nrow(heatmap_data_filtered) < 2 || ncol(heatmap_data_filtered) < 2) { next }
+  short_tf_names <- sub("[(/].*", "", rownames(heatmap_data_filtered))
+  rownames(heatmap_data_filtered) <- short_tf_names
+  heatmap_data_transposed <- t(heatmap_data_filtered)
+  
+  # 2. 后台聚类计算
+  clustering_results <- pheatmap(
+    heatmap_data_transposed,
+    cluster_rows = TRUE,
+    cluster_cols = TRUE,
+    silent = TRUE 
+  )
+  
+  # 3. 准备绘图矩阵 (0 -> NA)
+  plot_matrix <- heatmap_data_transposed
+  plot_matrix[plot_matrix == 0] <- NA
+  
+  # 4. 绘图
+  pheatmap(
+    plot_matrix, 
+    color = plot_colors[[condition_to_plot]], # 使用新的颜色方案
+    main = paste("Enriched Motifs in Peaks Up in", condition_to_plot),
+    na_col = "white",
+    cellwidth = 12,
+    cellheight = 12,
+    border_color = "grey80",
+    fontsize = 8,
+    angle_col = 90,
+    cluster_rows = clustering_results$tree_row,
+    cluster_cols = clustering_results$tree_col,
+    filename = paste0("TF_enrichment_", condition_to_plot, "_deeper_color.pdf")
+  )
+}
+
+cat("--- 所有热图处理完成！ ---\n")
