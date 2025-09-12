@@ -1,0 +1,296 @@
+# 加载必要的包
+library(Seurat)
+library(Signac)
+library(monocle3)
+library(SummarizedExperiment)
+library(dplyr)
+
+# 指定文件路径并读取数据
+seurat_obj_path <- "/disk192/users_dir/buyu/1.布宇/3.布宇scATAC-seq/2025.8.14/seurat_obj_for_monocle3.rds"
+cat("正在读取Seurat对象...\n")
+seurat_obj <- readRDS(seurat_obj_path)
+
+# 提取上皮细胞和中性粒细胞
+cat("正在提取上皮细胞和中性粒细胞...\n")
+epi_neu_obj <- subset(seurat_obj, seurat_clusters %in% c("Epithelial_cells", "Neutrophils"))
+
+# 检查子集细胞数量
+cat("提取的细胞数量:", ncol(epi_neu_obj), "\n")
+cat("细胞类型分布:\n")
+print(table(epi_neu_obj$seurat_clusters))
+
+# 从ATAC assay获取peak counts矩阵
+cat("正在获取peak counts矩阵...\n")
+peak_counts <- GetAssayData(epi_neu_obj, assay = "ATAC", layer = "counts")
+cat("Peak counts矩阵大小:", dim(peak_counts)[1], "features x", dim(peak_counts)[2], "cells\n")
+
+# 准备cell_metadata和peak_metadata
+cell_metadata <- epi_neu_obj@meta.data
+peak_metadata <- data.frame(
+  row.names = rownames(peak_counts),
+  gene_short_name = rownames(peak_counts)
+)
+
+# 创建CDS对象
+cat("正在创建Monocle3 CDS对象...\n")
+cds <- new_cell_data_set(
+  expression_data = peak_counts,
+  cell_metadata = cell_metadata,
+  gene_metadata = peak_metadata
+)
+
+# 查看CDS对象
+cat("CDS对象创建完成！\n")
+cat("CDS细胞数量:", ncol(cds), "\n")
+cat("CDS特征数量:", nrow(cds), "\n")
+
+# 保存CDS对象供后续分析使用
+cat("正在使用save_monocle_objects()保存CDS对象...\n")
+save_monocle_objects(cds, "epi_neutrophil_cds_raw")
+cat("CDS对象已保存到'epi_neutrophil_cds_raw'目录中\n")
+# 加载必要的包
+library(monocle3)
+library(ggplot2)
+
+# 加载之前保存的CDS对象
+cat("正在加载CDS对象...\n")
+cds <- load_monocle_objects("epi_neutrophil_cds_raw")
+cat("CDS对象加载完成！\n")
+
+# 在Monocle3中进行预处理
+cat("正在进行预处理...\n")
+# 使用LSI方法进行预处理，这对ATAC-seq数据更为合适
+cds <- preprocess_cds(cds, num_dim = 50, method = "LSI")
+cat("预处理完成!\n")
+
+# 降维到2D空间用于可视化
+cat("正在进行降维...\n")
+cds <- reduce_dimension(
+  cds,
+  reduction_method = "UMAP",
+  preprocess_method = "LSI"
+)
+cat("降维完成!\n")
+
+# 基于UMAP空间进行细胞聚类
+cat("正在聚类...\n")
+cds <- cluster_cells(
+  cds,
+  reduction_method = "UMAP"
+)
+cat("聚类完成!\n")
+
+# 可视化聚类结果
+cat("正在可视化聚类结果...\n")
+p1 <- plot_cells(cds,
+                color_cells_by = "seurat_clusters",
+                label_groups_by_cluster = TRUE,
+                cell_size = 1)
+print(p1)
+
+# 保存聚类图
+ggsave("epi_neutrophil_clusters.pdf", plot = p1, width = 8, height = 6)
+ggsave("epi_neutrophil_clusters.png", plot = p1, width = 8, height = 6, dpi = 300)
+cat("聚类图已保存!\n")
+
+# 保存预处理后的CDS对象
+cat("正在保存预处理后的CDS对象...\n")
+save_monocle_objects(cds, "epi_neutrophil_cds_preprocessed")
+cat("预处理后的CDS对象已保存到'epi_neutrophil_cds_preprocessed'目录中\n")
+
+# 构建轨迹图
+cat("正在构建轨迹图...\n")
+cds <- learn_graph(cds)
+cat("轨迹图构建完成!\n")
+
+# 可视化轨迹图 (按聚类着色)
+cat("正在可视化轨迹图 (按聚类着色)...\n")
+p2 <- plot_cells(cds,
+                color_cells_by = "seurat_clusters",
+                label_groups_by_cluster = TRUE,
+                label_branch_points = TRUE,
+                label_leaves = FALSE,
+                cell_size = 1,
+                graph_label_size = 1.5)
+print(p2)
+
+# 自定义函数获取起始节点
+get_earliest_principal_node <- function(cds, cluster_col, root_cluster){
+  cell_ids <- which(colData(cds)[, cluster_col] == root_cluster)
+  
+  closest_vertex <-
+    cds@principal_graph_aux[["UMAP"]]$pr_graph_cell_proj_closest_vertex
+  closest_vertex <- as.matrix(closest_vertex[colnames(cds), ])
+  root_pr_nodes <-
+    igraph::V(principal_graph(cds)[["UMAP"]])$name[as.numeric(names
+      (which.max(table(closest_vertex[cell_ids,]))))]
+  
+  root_pr_nodes
+}
+
+# 设置起始点并计算伪时间
+cat("正在设置起始点并计算伪时间...\n")
+# 使用上皮细胞作为起点
+root_nodes <- get_earliest_principal_node(cds, "seurat_clusters", "Epithelial_cells")
+cds <- order_cells(cds, root_pr_nodes = root_nodes)
+cat("伪时间计算完成!\n")
+
+# 可视化伪时间轨迹
+cat("正在可视化伪时间轨迹...\n")
+p3 <- plot_cells(cds,
+                color_cells_by = "pseudotime",
+                label_cell_groups = FALSE,
+                label_leaves = FALSE,
+                label_branch_points = FALSE,
+                graph_label_size = 1.5,
+                cell_size = 1)
+print(p3)
+
+# 保存轨迹图和伪时间图
+ggsave("trajectory_by_cluster.pdf", plot = p2, width = 8, height = 6)
+ggsave("trajectory_by_cluster.png", plot = p2, width = 8, height = 6, dpi = 300)
+ggsave("trajectory_by_pseudotime.pdf", plot = p3, width = 8, height = 6)
+ggsave("trajectory_by_pseudotime.png", plot = p3, width = 8, height = 6, dpi = 300)
+cat("轨迹图和伪时间图已保存!\n")
+
+# 保存包含伪时间信息的CDS对象
+save_monocle_objects(cds, "epi_neutrophil_cds_with_pseudotime")
+cat("包含伪时间信息的CDS对象已保存\n")
+
+
+# 加载必要的包
+library(ggplot2)
+library(ggthemes)
+library(scales)
+
+# 加载包含伪时间信息的CDS对象
+cat("正在加载包含伪时间信息的CDS对象...\n")
+cds <- load_monocle_objects("epi_neutrophil_cds_with_pseudotime")
+cat("CDS对象加载完成！\n")
+
+# 加载原始Seurat对象以获取BHLHE40表达数据
+cat("正在加载原始Seurat对象...\n")
+seurat_obj_path <- "/disk192/users_dir/buyu/1.布宇/3.布宇scATAC-seq/2025.8.14/seurat_obj_for_monocle3.rds"
+seurat_obj <- readRDS(seurat_obj_path)
+cat("Seurat对象加载完成！\n")
+
+# 提取上皮细胞和中性粒细胞
+cat("正在提取上皮细胞和中性粒细胞的子集...\n")
+epi_neu_obj <- subset(seurat_obj, seurat_clusters %in% c("Epithelial_cells", "Neutrophils"))
+
+# 获取BHLHE40的表达值
+bhlhe40_id <- "ENSSSCG00000036136"
+cat("正在获取BHLHE40 (ID:", bhlhe40_id, ")的表达值...\n")
+bhlhe40_expr <- GetAssayData(epi_neu_obj, assay = "ACTIVITY", slot = "data")[bhlhe40_id,]
+
+# 确认CDS对象中有伪时间信息
+if(!"pseudotime" %in% colnames(colData(cds))) {
+  cat("CDS对象中缺少pseudotime列，尝试使用UMAP坐标作为伪时间的近似...\n")
+  
+  # 使用UMAP_1作为伪时间的近似
+  umap_coords <- reducedDims(cds)[["UMAP"]]
+  pseudo_time <- -umap_coords[,1]  # 负号根据数据分布调整
+  
+  # 归一化到0-1范围
+  pseudo_time <- (pseudo_time - min(pseudo_time)) / (max(pseudo_time) - min(pseudo_time))
+  
+  # 确保所有细胞名称匹配
+  common_cells <- intersect(rownames(umap_coords), names(bhlhe40_expr))
+  cat("找到", length(common_cells), "个共同的细胞\n")
+  
+  # 创建数据框
+  plot_data <- data.frame(
+    pseudotime = pseudo_time[common_cells],
+    bhlhe40_expr = as.numeric(bhlhe40_expr[common_cells]),
+    cluster = colData(cds)[common_cells, "seurat_clusters"],
+    stringsAsFactors = FALSE
+  )
+} else {
+  cat("CDS对象中包含pseudotime列\n")
+  
+  # 获取伪时间和聚类信息
+  pseudotime_vector <- colData(cds)$pseudotime
+  names(pseudotime_vector) <- colnames(cds)
+  
+  cluster_vector <- colData(cds)$seurat_clusters
+  names(cluster_vector) <- colnames(cds)
+  
+  # 确保所有细胞名称匹配
+  common_cells <- intersect(names(pseudotime_vector), names(bhlhe40_expr))
+  cat("找到", length(common_cells), "个共同的细胞\n")
+  
+  # 创建数据框
+  plot_data <- data.frame(
+    pseudotime = pseudotime_vector[common_cells],
+    bhlhe40_expr = as.numeric(bhlhe40_expr[common_cells]),
+    cluster = cluster_vector[common_cells],
+    stringsAsFactors = FALSE
+  )
+}
+
+# 创建优化版的图表 - Nature期刊风格
+p <- ggplot(plot_data, aes(x = pseudotime, y = bhlhe40_expr, color = cluster)) +
+  # 添加密度等高线以显示高密度区域
+  geom_density_2d(alpha = 0.3, linewidth = 0.3) +
+  # 散点图层
+  geom_point(size = 1.1, alpha = 0.6) +
+  # 为每种细胞类型添加单独的平滑曲线
+  geom_smooth(aes(group = cluster), method = "loess", se = FALSE, linewidth = 0.8, linetype = "dashed") +
+  # 总体趋势线
+  geom_smooth(method = "loess", se = TRUE, color = "black", linewidth = 1, linetype = 1) +
+  # 设置颜色
+  scale_color_manual(values = c("Epithelial_cells" = "#E64B35", "Neutrophils" = "#4DBBD5"),
+                     name = "Cell Type",
+                     labels = c("Epithelial cells", "Neutrophils")) +
+  # 设置坐标轴范围
+  scale_y_continuous(limits = c(0, 10), breaks = seq(0, 10, 2)) +
+  scale_x_continuous(limits = c(0, 1), breaks = seq(0, 1, 0.2)) +
+  # 标签
+  labs(
+    title = "BHLHE40 Expression Dynamics during Epithelial-to-Neutrophil Transition",
+    x = "Pseudotime",
+    y = "BHLHE40 Expression Level",
+    caption = paste0("n = ", sum(plot_data$cluster == "Epithelial_cells"), " Epithelial cells, ", 
+                    sum(plot_data$cluster == "Neutrophils"), " Neutrophils")
+  ) +
+  # 主题设置
+  theme_minimal() +
+  theme(
+    # 标题设置
+    plot.title = element_text(hjust = 0.5, size = 14, face = "bold"),
+    # 坐标轴标题
+    axis.title = element_text(size = 12, face = "bold"),
+    # 坐标轴文字
+    axis.text = element_text(size = 10, color = "black"),
+    # 图例设置
+    legend.title = element_text(size = 12, face = "bold"),
+    legend.text = element_text(size = 10),
+    legend.position = c(0.85, 0.85),
+    legend.background = element_rect(fill = "white", color = NA),
+    # 网格线设置 - 减少视觉干扰
+    panel.grid.major = element_line(color = "gray92", linewidth = 0.3),
+    panel.grid.minor = element_blank(),
+    # 背景设置
+    panel.background = element_rect(fill = "white", color = NA),
+    plot.background = element_rect(fill = "white", color = NA),
+    # 边框设置
+    axis.line = element_line(color = "black", linewidth = 0.5),
+    # 图表说明文字
+    plot.caption = element_text(hjust = 0, size = 8, face = "italic")
+  )
+
+# 如果想添加高表达区域的注释
+max_expr_time <- plot_data[which.max(plot_data$bhlhe40_expr), "pseudotime"]
+p <- p + annotate("text", x = max_expr_time, y = 10.5, 
+                 label = "Peak expression", 
+                 size = 3, fontface = "italic")
+
+# 输出图形
+print(p)
+
+# 保存为高分辨率图像
+ggsave("BHLHE40_pseudotime_Nature.pdf", plot = p, width = 5.5, height = 4.2, dpi = 300)
+ggsave("BHLHE40_pseudotime_Nature.png", plot = p, width = 5.5, height = 4.2, dpi = 600)
+ggsave("BHLHE40_pseudotime_Nature.tiff", plot = p, width = 5.5, height = 4.2, dpi = 600, compression = "lzw")
+
+cat("BHLHE40伪时间表达图已保存！\n")

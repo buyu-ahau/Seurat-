@@ -1,0 +1,153 @@
+# 加载必要的包
+library(Seurat)
+library(Signac)
+library(dplyr)
+library(ggplot2)
+library(tidyr)
+library(future)
+library(future.apply)
+
+# 设置并行计算 - 使用64核中的48核（留一些核心给系统其他进程）
+plan("multicore", workers = 48)
+# 增加允许的内存限制，因为scATAC-seq数据较大
+options(future.globals.maxSize = 50 * 1024^3)  # 50GB
+
+# 创建保存结果的目录
+output_dir <- "/disk192/users_dir/buyu/1.布宇/3.布宇scATAC-seq/2025.8.14/7.Diffpeak分析"
+dir.create(output_dir, showWarnings = FALSE, recursive = TRUE)
+setwd(output_dir)
+
+# 为数据添加一个实验组列(Infected vs Control)
+obj$condition <- ifelse(grepl("Mhp", obj$orig.ident), "Infected", "Control")
+cat("样本分组情况:\n")
+print(table(obj$condition))
+
+# 创建一个存储差异分析结果的列表
+diff_peaks_results <- list()
+up_in_infected_counts <- c()
+up_in_control_counts <- c()
+cell_types <- c()
+
+# 对每个细胞类型进行差异分析
+for(cell_type in unique(obj$seurat_clusters)) {
+  cat(paste0("\n正在处理细胞类型: ", cell_type, "\n"))
+  
+  # 子集化为当前细胞类型
+  cell_subset <- subset(obj, seurat_clusters == cell_type)
+  
+  # 检查每组细胞数量
+  cell_counts <- table(cell_subset$condition)
+  cat("细胞数量: Infected =", cell_counts["Infected"], ", Control =", cell_counts["Control"], "\n")
+  
+  # 确保每组至少有10个细胞
+  if(all(cell_counts >= 10)) {
+    # 设置默认assay为ATAC
+    DefaultAssay(cell_subset) <- "ATAC"
+    
+    # 进行差异分析，启用并行计算
+    cat("正在并行进行差异分析（使用48核）...\n")
+    diff_peaks <- FindMarkers(
+      object = cell_subset,
+      group.by = "condition",
+      ident.1 = "Infected",
+      ident.2 = "Control",
+      test.use = "LR",    # 使用逻辑回归，适合scATAC-seq数据
+      latent.vars = "nCount_ATAC",  # 控制测序深度
+      min.pct = 0.05,     # 至少在5%的细胞中检测到
+      logfc.threshold = 0.25  # log2倍数变化阈值
+    )
+    
+    # 添加peak名称和细胞类型
+    diff_peaks$peak <- rownames(diff_peaks)
+    diff_peaks$cell_type <- cell_type
+    
+    # 保存结果
+    diff_peaks_results[[cell_type]] <- diff_peaks
+    
+    # 统计上下调peak数量
+    up_in_infected <- sum(diff_peaks$avg_log2FC > 0 & diff_peaks$p_val_adj < 0.05)
+    up_in_control <- sum(diff_peaks$avg_log2FC < 0 & diff_peaks$p_val_adj < 0.05)
+    
+    cat("差异peak数量: 感染组上调 =", up_in_infected, ", 对照组上调 =", up_in_control, "\n")
+    
+    # 保存计数
+    up_in_infected_counts <- c(up_in_infected_counts, up_in_infected)
+    up_in_control_counts <- c(up_in_control_counts, up_in_control)
+    cell_types <- c(cell_types, cell_type)
+    
+    # 立即保存当前细胞类型的结果，以防程序中断
+    write.csv(
+      diff_peaks, 
+      file = file.path(output_dir, paste0("diff_peaks_", cell_type, ".csv")),
+      row.names = FALSE
+    )
+    cat(paste0("已保存 ", cell_type, " 的差异分析结果\n"))
+  } else {
+    cat("细胞数量不足，跳过差异分析\n")
+  }
+}
+
+# 创建绘图数据框
+plot_data <- data.frame(
+  cell_type = cell_types,
+  up_in_infected = up_in_infected_counts,
+  up_in_control = up_in_control_counts
+)
+
+# 保存差异peak数量统计结果
+write.csv(plot_data, file = file.path(output_dir, "diff_peaks_counts_summary.csv"), row.names = FALSE)
+
+# 将数据转换为长格式用于绘图
+plot_data_long <- plot_data %>%
+  pivot_longer(
+    cols = c(up_in_infected, up_in_control),
+    names_to = "peak_type",
+    values_to = "count"
+  )
+
+# 重命名peak_type以便于理解
+plot_data_long$peak_type <- factor(
+  plot_data_long$peak_type,
+  levels = c("up_in_infected", "up_in_control"),
+  labels = c("Up in Infected", "Up in Control")
+)
+
+# 创建条形图
+p <- ggplot(plot_data_long, aes(x = cell_type, y = count/1000, fill = peak_type)) +
+  geom_bar(stat = "identity", position = "dodge", width = 0.7) +
+  labs(
+    title = "Differential Peaks between Infected and Control Groups",
+    x = "Cell Type",
+    y = "# Diff. Peaks (x10³)",
+    fill = "Peak Type"
+  ) +
+  scale_fill_manual(values = c("Up in Infected" = "#E64B35", "Up in Control" = "#4DBBD5")) +
+  theme_minimal() +
+  theme(
+    axis.text.x = element_text(angle = 45, hjust = 1, size = 12),
+    axis.text.y = element_text(size = 12),
+    axis.title = element_text(size = 14, face = "bold"),
+    plot.title = element_text(hjust = 0.5, size = 16, face = "bold"),
+    legend.title = element_text(size = 12, face = "bold"),
+    legend.text = element_text(size = 12),
+    panel.grid.major.x = element_blank(),
+    panel.grid.minor = element_blank()
+  )
+
+# 显示图形
+print(p)
+
+# 保存图形
+ggsave(file.path(output_dir, "differential_peaks_by_cell_type.pdf"), plot = p, width = 10, height = 6)
+ggsave(file.path(output_dir, "differential_peaks_by_cell_type.png"), plot = p, width = 10, height = 6, dpi = 300)
+
+# 保存所有差异分析结果到一个文件
+if(length(diff_peaks_results) > 0) {
+  all_diff_peaks <- do.call(rbind, diff_peaks_results)
+  write.csv(all_diff_peaks, file = file.path(output_dir, "all_diff_peaks.csv"), row.names = FALSE)
+}
+
+cat("\n差异分析完成！所有结果已保存到:", output_dir, "\n")
+
+# 关闭并行计算
+plan(sequential)
