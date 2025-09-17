@@ -1,0 +1,446 @@
+> # 设置工作目录
+setwd("/disk192/users_dir/buyu/1.布宇/8.SE联合scRNAscATAC/SE细胞特异性热图绘制/")
+
+# 加载必要的库
+library(qs)
+library(Seurat)
+library(Signac)
+library(pheatmap)
+library(RColorBrewer)
+library(dplyr)
+
+# 详细检查RNA-seq数据
+rna_data <- qread("rna_final_annotated_updated.qs")
+
+# 1. 查看Seurat对象的基本结构
+print("RNA Seurat对象的槽位:")
+slotNames(rna_data)
+
+# 2. 查看可用的assay
+print("可用的assay:")
+print(Assays(rna_data))
+
+# 3. 检查默认assay中的特征数量和细胞数量
+print("默认assay中的特征数和细胞数:")
+dim(GetAssayData(rna_data))
+
+# 4. 查看元数据列
+print("元数据列:")
+colnames(rna_data@meta.data)
+
+# 5. 查看细胞类型标识
+print("细胞类型分布:")
+print(table(Idents(rna_data)))
+
+# 6. 检查是否有降维结果
+} print(paste("关联基因:", genes))))51B.gene.ZFP36L1.gene.DCAF5.gene.ACTN1"]= se_id, 36L1.gene.DCAF5.gene.ACTN1), ",")))
+
+Attaching package: ‘dplyr’
+
+The following objects are masked from ‘package:stats’:
+
+    filter, lag
+
+The following objects are masked from ‘package:base’:
+
+    intersect, setdiff, setequal, union
+
+[1] "RNA Seurat对象的槽位:"
+ [1] "assays"       "meta.data"    "active.assay" "active.ident" "graphs"      
+ [6] "neighbors"    "reductions"   "images"       "project.name" "misc"        
+[11] "version"      "commands"     "tools"       
+[1] "可用的assay:"
+[1] "RNA"
+[1] "默认assay中的特征数和细胞数:"
+[1] 33029 35330
+[1] "元数据列:"
+ [1] "orig.ident"      "nCount_RNA"      "nFeature_RNA"    "Groups"         
+ [5] "percent.mito"    "percent.hgb"     "group"           "S.Score"        
+ [9] "G2M.Score"       "Phase"           "CC.Difference"   "RNA_snn_res.0.5"
+[13] "seurat_clusters" "celltype"       
+[1] "细胞类型分布:"
+
+      Macrophages         CD4 cells         CD8 cells           B cells 
+             6054              1838              9450              2226 
+ Epithelial cells       Fibroblasts Endothelial cells       Neutrophils 
+              624              1131               862              3425 
+     Plasma cells          NK cells          DC cells 
+             8141               747               832 
+[1] "可用的降维:"
+ [1] "pca"               "pca_RNA"           "harmony_RNA"      
+ [4] "tsne"              "tsne_harmony_RNA"  "umap"             
+ [7] "umap_harmony_RNA"  "tsne3"             "tsne3_harmony_RNA"
+[10] "umap3"             "umap3_harmony_RNA"
+[1] "前10个基因的表达值(随机10个细胞):"
+Warning message:
+The `slot` argument of `GetAssayData()` is deprecated as of SeuratObject 5.0.0.
+ℹ Please use the `layer` argument instead.
+This warning is displayed once every 8 hours.
+Call `lifecycle::last_lifecycle_warnings()` to see where this warning was generated. 
+10 x 10 sparse Matrix of class "dgCMatrix"
+  [[ suppressing 10 column names ‘Day28_3_TAGCACAGTGTTCCTC’, ‘Day0_2_CCTCTAGCATACGCAT’, ‘Day0_3_GTAAGTCTCAAGTCGT’ ... ]]
+                                                                      
+ALDH1A1            .        . . .        .        . .        .        
+ENSSSCG00000005267 1.583626 . . 1.645934 .        . .        .        
+RORB               .        . . .        .        . .        .        
+TRPM6              .        . . .        .        . .        .        
+C9orf40            .        . . .        .        . .        .        
+CARNMT1            .        . . .        .        . .        0.4023561
+NMRK1              .        . . .        .        . .        .        
+ENSSSCG00000005273 1.077149 . . .        1.748911 . 2.797789 0.6884801
+ENSSSCG00000045514 .        . . .        .        . .        .        
+PCSK5              .        . . .        .        . .        .        
+                                     
+ALDH1A1            .         .       
+ENSSSCG00000005267 3.2752414 2.816801
+RORB               .         .       
+TRPM6              .         .       
+C9orf40            .         .       
+CARNMT1            0.4482352 .       
+NMRK1              .         .       
+ENSSSCG00000005273 1.9769956 .       
+ENSSSCG00000045514 .         .       
+PCSK5              .         .       
+[1] "超级增强子表的列:"
+[1] "REGION_ID"        "CHROM"            "START"            "STOP"            
+[5] "NUM_LOCI"         "CONSTITUENT_SIZE" "Mhp.bam"          "enhancerRank"    
+[9] "isSuper"         
+[1] "超级增强子数量:"
+[1] 2422
+[1] "基因名称格式示例:"
+           gene.RAD51B.gene.ZFP36L1.gene.DCAF5.gene.ACTN1
+1                                 gene-ZFP36L2,gene-THADA
+2                                               gene-KLF6
+3                       gene-NCOR2,gene-RFLNA,gene-SCARB1
+4                       gene-CUX1,gene-SH2B2,gene-PRKRIP1
+5                                              gene-PRKCE
+6                                  gene-FOSL2,gene-BABAM2
+7                                               gene-TLE3
+8                                 gene-SEPT9,gene-SEC14L1
+9                                 gene-AKAP13,gene-KLHL25
+10                                 gene-OTUD7A,gene-KLF13
+11              gene-SOCS1,gene-CLEC16A,gene-LOC110260110
+12                                             gene-PREX1
+13                            gene-BTG1,gene-LOC106510426
+14             gene-ANAPC1,gene-BCL2L11,gene-LOC100520015
+15  gene-RTKN2,gene-C14H10orf107,gene-ARID5B,gene-MIR9836
+16 gene-FAM53B,gene-LHPP,gene-TRNAE-UUC-38,gene-EEF1AKMT2
+17                              gene-IKZF1,gene-C9H7orf72
+18                                  gene-TNS3,gene-MRPS24
+19                        gene-PSEN2,gene-STUM,gene-ITPKB
+20                        gene-NARS2,gene-GAB2,gene-USP35
+                               gene.ZFYVE26.gene.RAD51B.gene.EXD2
+1           gene-HAAO,gene-TRNAI-UAU,gene-PLEKHH2,gene-C1GALT1C1L
+2                                                     gene-PITRM1
+3                                                                
+4                   gene-ORAI2,gene-ALKBH4,gene-POLR2J,gene-LRWD1
+5                                           gene-SRBD1,gene-EPAS1
+6                                             gene-PLB1,gene-RBKS
+7                                                       gene-TLE3
+8                                               gene-LOC106504796
+9                                                                
+10                                                     gene-TRPM1
+11 gene-PRM3,gene-CLEC16A,gene-TNP2,gene-PRM2,gene-PRM1,gene-DEXI
+12                                                   gene-ARFGEF2
+13                                                               
+14                      gene-LOC110260116,gene-BCL2L11,gene-MERTK
+15                                                               
+16              gene-ABRAXAS2,gene-OAT,gene-EEF1AKMT2,gene-NKX1-2
+17                               gene-FIGNL1,gene-IKZF1,gene-ZPBP
+18                                          gene-TNS3,gene-MRPS24
+19                                          gene-PSEN2,gene-COQ8A
+20                                                               
+        gene.ZFP36L1
+1       gene-ZFP36L2
+2          gene-KLF6
+3         gene-NCOR2
+4         gene-SH2B2
+5         gene-PRKCE
+6         gene-FOSL2
+7          gene-TLE3
+8       gene-SEC14L1
+9        gene-AKAP13
+10        gene-KLF13
+11 gene-LOC110260110
+12        gene-PREX1
+13         gene-BTG1
+14 gene-LOC100520015
+15       gene-ARID5B
+16       gene-FAM53B
+17        gene-IKZF1
+18         gene-TNS3
+19        gene-ITPKB
+20         gene-GAB2
+[1] "RNA-seq数据中的一些基因名:"
+[1] "ALDH1A1"            "ENSSSCG00000005267" "RORB"              
+[4] "TRPM6"              "C9orf40"            "CARNMT1"           
+[1] "超级增强子相关基因在RNA-seq数据中的覆盖情况:"
+
+FALSE  TRUE 
+  904  2869 
+[1] "前5个超级增强子的基因关联:"
+[1] "超级增强子: 568_peak_269553_lociStitched"
+[1] "关联基因: "
+[1] "超级增强子: 359_peak_187592_lociStitched"
+[1] "关联基因: gene-ZFP36L2,gene-THADA"
+[1] "超级增强子: 400_peak_39672_lociStitched"
+[1] "关联基因: gene-KLF6"
+[1] "超级增强子: 291_peak_89285_lociStitched"
+[1] "关联基因: gene-NCOR2,gene-RFLNA,gene-SCARB1"
+[1] "超级增强子: 198_peak_173418_lociStitched"
+[1] "关联基因: gene-CUX1,gene-SH2B2,gene-PRKRIP1"
+
+
+# 加载必要的库
+library(qs)  # 用于读取.qs文件
+library(Seurat)  # 用于处理单细胞数据
+library(Signac)  # 用于ATAC-seq数据
+library(pheatmap)  # 用于绘制热图
+library(viridis)  # 用于颜色方案
+library(RColorBrewer)  # 用于颜色方案
+library(dplyr)
+
+# 设置工作目录
+setwd("/disk192/users_dir/buyu/1.布宇/8.SE联合scRNAscATAC/SE细胞特异性热图绘制/")
+
+###############################################################
+# 1. 加载数据
+###############################################################
+
+# 加载RNA-seq数据
+rna_data <- qread("rna_final_annotated_updated.qs")
+
+# 加载超级增强子相关文件
+enhancer_to_gene <- read.table("Mhp_SuperEnhancers_ENHANCER_TO_GENE.txt", 
+                               header=TRUE, sep="\t", stringsAsFactors=FALSE)
+se_table <- read.table("Mhp_SuperEnhancers.table.txt", 
+                       header=TRUE, sep="\t", stringsAsFactors=FALSE)
+
+###############################################################
+# 2. 提取超级增强子相关基因
+###############################################################
+
+# 从enhancer_to_gene文件中提取基因名
+gene_columns <- grep("gene", colnames(enhancer_to_gene), value=TRUE)
+all_se_genes <- c()
+
+for(col in gene_columns) {
+  genes <- unlist(strsplit(as.character(enhancer_to_gene[[col]]), ","))
+  all_se_genes <- c(all_se_genes, genes)
+}
+
+# 去除重复基因并标准化基因名（移除"gene-"前缀）
+all_se_genes <- unique(all_se_genes)
+all_se_genes <- all_se_genes[all_se_genes != ""]  # 移除空值
+all_se_genes_clean <- gsub("gene-", "", all_se_genes)
+
+# 检查有多少基因存在于RNA-seq数据中
+valid_genes <- all_se_genes_clean[all_se_genes_clean %in% rownames(rna_data)]
+print(paste("超级增强子相关基因总数:", length(all_se_genes_clean)))
+print(paste("在RNA-seq数据中找到的基因数:", length(valid_genes)))
+
+###############################################################
+# 3. 计算每种细胞类型的平均表达
+###############################################################
+
+# 获取表达矩阵
+expr_matrix <- GetAssayData(rna_data, slot="data")
+expr_matrix_se <- expr_matrix[rownames(expr_matrix) %in% valid_genes, ]
+
+# 获取细胞类型信息
+cell_types <- as.character(Idents(rna_data))
+names(cell_types) <- colnames(expr_matrix)
+unique_cell_types <- unique(cell_types)
+
+# 创建平均表达矩阵
+avg_expr <- matrix(0, nrow=nrow(expr_matrix_se), ncol=length(unique_cell_types))
+rownames(avg_expr) <- rownames(expr_matrix_se)
+colnames(avg_expr) <- unique_cell_types
+
+# 计算每种细胞类型的平均表达
+for(cell_type in unique_cell_types) {
+  cells_of_type <- names(cell_types)[cell_types == cell_type]
+  avg_expr[, cell_type] <- rowMeans(expr_matrix_se[, cells_of_type])
+}
+
+###############################################################
+# 4. 计算细胞类型特异性
+###############################################################
+
+# 计算每个基因在哪个细胞类型中表达最高
+max_expr_cell <- apply(avg_expr, 1, which.max)
+max_expr_val <- apply(avg_expr, 1, max)
+
+# 创建一个数据框存储基因信息
+gene_info <- data.frame(
+  gene = rownames(avg_expr),
+  cell_type = colnames(avg_expr)[max_expr_cell],
+  max_expr = max_expr_val,
+  stringsAsFactors = FALSE
+)
+
+# 过滤低表达基因（可选）
+gene_info <- gene_info[gene_info$max_expr > 0.3, ]
+
+###############################################################
+# 5. 数据调整和转换（用于改善可视化）
+###############################################################
+
+# 计算数据的分位数
+quantiles <- quantile(avg_expr, probs = c(0, 0.5, 0.75, 0.9, 0.95, 0.99, 1))
+print(quantiles)
+
+# 设置一个较低的上限，让更多细节可见
+max_value <- quantiles["99%"]  # 使用99%分位数作为上限
+adjusted_expr <- avg_expr
+adjusted_expr[adjusted_expr > max_value] <- max_value
+
+###############################################################
+# 6. 细胞类型和基因排序
+###############################################################
+
+# 预定义细胞类型顺序
+cell_order <- c(
+  "Macrophages", "CD4 cells", "CD8 cells", "B cells", 
+  "Epithelial cells", "Fibroblasts", "Endothelial cells", 
+  "Neutrophils", "Plasma cells", "NK cells", "DC cells"
+)
+
+# 确保所有细胞类型都在数据中
+cell_order <- intersect(cell_order, colnames(avg_expr))
+
+# 按照细胞类型和表达值排序基因
+gene_info$cell_type <- factor(gene_info$cell_type, levels = cell_order)
+gene_info <- gene_info[order(gene_info$cell_type, -gene_info$max_expr), ]
+
+# 创建转置的表达矩阵（细胞类型在行，基因在列）
+transposed_expr <- t(avg_expr[gene_info$gene, cell_order])
+
+###############################################################
+# 7. 设置注释和颜色
+###############################################################
+
+# 创建列注释（标识每个基因属于哪个细胞类型）
+col_annotation <- data.frame(
+  Cell_Type = gene_info$cell_type,
+  row.names = gene_info$gene
+)
+
+# 为细胞类型设置自定义颜色方案
+cell_colors <- c(
+  "Macrophages" = "#c57fa1",    # 粉紫色
+  "CD4 cells" = "#8ca6af",      # 灰蓝色
+  "CD8 cells" = "#90c18d",      # 浅绿色
+  "B cells" = "#925e53",        # 棕色
+  "Epithelial cells" = "#38a6b3", # 青色
+  "Fibroblasts" = "#69a78d",    # 绿色
+  "Endothelial cells" = "#da966a", # 橙色
+  "Neutrophils" = "#c9bc8e",    # 米黄色
+  "Plasma cells" = "#b4a5c4",   # 淡紫色
+  "NK cells" = "#a2c0e0",       # 浅蓝色
+  "DC cells" = "#c57fa1"        # 使用第一个颜色（如果需要第11个颜色）
+)
+
+# 更新注释颜色
+annotation_colors <- list(
+  Cell_Type = cell_colors
+)
+
+###############################################################
+# 8. 绘制最终热图
+###############################################################
+
+# 绘制热图，不添加分隔线
+pdf("SE_Genes_By_CellType_Final.pdf", width=18, height=8)
+pheatmap(transposed_expr,  # 使用转置的表达矩阵
+         color = inferno(100),  # 使用inferno颜色方案（黑到黄）
+         cluster_rows = FALSE,  # 不进行行聚类
+         cluster_cols = FALSE,  # 不进行列聚类
+         show_rownames = TRUE,  # 显示行名（细胞类型）
+         show_colnames = FALSE, # 不显示列名（基因名，太多）
+         fontsize_row = 10,
+         main = "Cell Type Specific Super Enhancer Genes",
+         border_color = NA,
+         annotation_col = col_annotation,  # 添加列注释
+         annotation_colors = annotation_colors,  # 使用自定义颜色
+         annotation_legend = TRUE,
+         annotation_names_col = FALSE,  # 隐藏注释名称
+         breaks = seq(0, max_value, length.out = 100))  # 自定义颜色刻度
+dev.off()
+
+# 保存结果数据供后续分析
+saveRDS(list(
+  transposed_expr = transposed_expr,
+  gene_info = gene_info,
+  cell_order = cell_order,
+  cell_colors = cell_colors
+), file = "SE_genes_by_celltype_final.rds")
+
+print("最终热图已生成: SE_Genes_By_CellType_Final.pdf")
+
+
+
+
+
+细胞类型特异性超级增强子(SE)基因分析结果
+概述
+本分析对单细胞RNA-seq数据与超级增强子(SE)关联基因进行了整合分析，鉴定了11种不同细胞类型中特异性表达的SE相关基因。总共发现1679个SE相关基因在不同细胞类型中表现出特异性表达模式。
+细胞类型特异性SE基因分布
+各细胞类型特异性SE基因数量如下：
+
+树突状细胞 (DC cells): 241个
+巨噬细胞 (Macrophages): 239个
+内皮细胞 (Endothelial cells): 237个
+成纤维细胞 (Fibroblasts): 193个
+B细胞 (B cells): 181个
+CD4+ T细胞 (CD4 cells): 133个
+上皮细胞 (Epithelial cells): 127个
+中性粒细胞 (Neutrophils): 118个
+NK细胞 (NK cells): 92个
+CD8+ T细胞 (CD8 cells): 85个
+浆细胞 (Plasma cells): 33个
+
+代表性细胞类型的高表达SE基因
+巨噬细胞 (Macrophages)
+巨噬细胞中特异性表达的SE基因有239个，表达最高的前10个基因为：
+
+TYROBP (2.18) - 与巨噬细胞信号传导相关
+S100A10 (2.08) - 与炎症反应相关
+GNG10 (1.92) - G蛋白信号传导
+ALDOA (1.74) - 糖酵解相关
+PRR13 (1.72) - 转录调控
+CD63 (1.70) - 溶酶体相关
+MITF (1.70) - 巨噬细胞分化和功能调控
+RGCC (1.68) - 细胞周期调控
+PICALM (1.61) - 囊泡转运
+QKI (1.60) - RNA结合蛋白
+
+CD4+ T细胞 (CD4 cells)
+CD4+ T细胞中特异性表达的SE基因有133个，表达最高的前10个基因为：
+
+SH3BGRL3 (2.53) - 氧化还原调控
+JUNB (2.30) - 转录因子，T细胞活化相关
+ZFP36L2 (2.20) - RNA稳定性调控
+SKAP1 (2.17) - T细胞受体信号传导
+RGS1 (1.88) - T细胞迁移调控
+STK17A (1.84) - 丝氨酸/苏氨酸激酶
+DDX5 (1.73) - RNA解旋酶
+TOX (1.59) - T细胞发育相关
+FYN (1.59) - T细胞受体信号传导
+CTSC (1.57) - 溶酶体蛋白酶
+
+数据存储
+所有分析结果已保存至以下目录：
+/disk192/users_dir/buyu/1.布宇/8.SE联合scRNAscATAC/SE细胞特异性热图绘制/Cell_Type_Specific_SE_Genes/
+包含以下文件：
+
+每种细胞类型的特异性SE基因CSV文件
+所有细胞类型的汇总表：All_Cell_Type_Specific_SE_Genes.csv
+SE基因表达矩阵：SE_Genes_Expression_Matrix.csv
+细胞类型-SE基因映射字典：Cell_Type_SE_Gene_Map.rds
+
+主要发现
+
+细胞类型间差异：不同细胞类型特异性SE基因数量存在显著差异，最多(DC细胞)和最少(浆细胞)之间相差约7倍。
+功能相关性：各细胞类型特异性表达的SE基因与其生物学功能密切相关。例如，巨噬细胞中高表达的TYROBP和CD63等基因参与免疫调控和吞噬作用；CD4+ T细胞中高表达的JUNB、SKAP1和FYN等基因参与T细胞活化和受体信号传导。
+潜在调控机制：这些细胞特异性SE相关基因可能对维持细胞身份和功能起关键作用，为理解不同细胞类型的特异性转录调控提供了重要线索。
