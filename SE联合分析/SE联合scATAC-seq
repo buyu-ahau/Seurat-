@@ -1,0 +1,752 @@
+# 设置工作路径
+setwd("/disk192/users_dir/buyu/1.布宇/8.SE联合scRNAscATAC/SE细胞特异性热图绘制")
+
+# 加载必要的库
+library(Seurat)
+library(Signac)
+library(GenomicRanges)
+library(dplyr)
+library(pheatmap)
+library(viridis)
+library(RColorBrewer)
+
+# 加载已构建索引的Seurat对象
+load("daa52225-obj-relinked-final.Rda")
+
+# 加载超级增强子相关文件
+se_table <- read.table("Mhp_SuperEnhancers.table.txt", header=TRUE, sep="\t") 
+se_to_gene <- read.table("Mhp_SuperEnhancers_ENHANCER_TO_GENE.txt", header=TRUE, sep="\t")
+gene_to_se <- read.table("Mhp_SuperEnhancers_GENE_TO_ENHANCER.txt", header=TRUE, sep="\t")
+
+# 创建SE的GRanges对象，修改染色体名称格式（去除"chr"前缀）
+seqnames_fixed <- gsub("chr", "", se_table$CHROM)
+se_ranges <- GRanges(
+  seqnames = seqnames_fixed,
+  ranges = IRanges(start = se_table$START, end = se_table$STOP),
+  mcols = data.frame(
+    se_id = se_table$REGION_ID,
+    num_loci = se_table$NUM_LOCI,
+    constituent_size = se_table$CONSTITUENT_SIZE,
+    enhancer_rank = se_table$enhancerRank
+  )
+)
+
+# 设置使用细胞类型注释
+Idents(obj_relinked) <- "seurat_clusters"
+cell_types <- levels(Idents(obj_relinked))
+
+# 初始化SE活性矩阵
+se_activity <- matrix(0, nrow = length(se_ranges), ncol = length(cell_types))
+rownames(se_activity) <- se_ranges$mcols.se_id
+colnames(se_activity) <- cell_types
+
+# 计算每个细胞类型的SE活性
+# 启用并行计算
+library(doParallel)
+library(foreach)
+
+# 设置并行核心数
+n_cores <- 32  # 根据服务器情况调整
+registerDoParallel(cores = n_cores)
+
+# 使用foreach并行计算不同细胞类型的SE活性
+results <- foreach(i = 1:length(cell_types), .packages = c("Signac", "Seurat", "GenomicRanges")) %dopar% {
+  ct <- cell_types[i]
+  cells_in_type <- WhichCells(obj_relinked, idents = ct)
+  
+  # 每次处理最多1000个细胞，以避免内存问题
+  cell_batches <- split(cells_in_type, ceiling(seq_along(cells_in_type)/1000))
+  
+  counts_sum <- matrix(0, nrow = length(se_ranges), ncol = 1)
+  
+  for (j in seq_along(cell_batches)) {
+    batch <- cell_batches[[j]]
+    counts_batch <- FeatureMatrix(
+      fragments = obj_relinked@assays$ATAC@fragments,
+      features = se_ranges,
+      cells = batch
+    )
+    counts_sum <- counts_sum + rowSums(counts_batch)
+  }
+  
+  # 计算平均活性
+  activity <- counts_sum / length(cells_in_type)
+  
+  # 返回该细胞类型的结果
+  list(cell_type = ct, activity = activity)
+}
+
+# 整合并行计算结果
+for (i in 1:length(results)) {
+  ct <- results[[i]]$cell_type
+  activity <- results[[i]]$activity
+  col_idx <- which(colnames(se_activity) == ct)
+  se_activity[, col_idx] <- activity
+}
+
+# 关闭并行集群
+stopImplicitCluster()
+
+# 保存原始SE活性矩阵
+write.csv(se_activity, "SE_activity_by_celltype_raw.csv")
+
+# 归一化SE活性
+# 按SE大小归一化
+se_sizes <- width(se_ranges)
+names(se_sizes) <- se_ranges$mcols.se_id
+
+# 每千碱基归一化
+se_activity_norm_size <- sweep(se_activity, 1, se_sizes / 1000, "/")
+write.csv(se_activity_norm_size, "SE_activity_by_celltype_norm_size.csv")
+
+# 清除全零行
+nonzero_rows <- rowSums(se_activity_norm_size) > 0
+se_activity_norm_size_filtered <- se_activity_norm_size[nonzero_rows, ]
+
+# 对数据进行缩放以便热图显示
+se_activity_scaled <- t(scale(t(se_activity_norm_size_filtered)))
+
+# 分析细胞类型特异性SE - 使用Z-score阈值0.1
+# 计算每个SE在哪个细胞类型中Z-score最高
+max_cell_type <- apply(se_activity_scaled, 1, which.max)
+max_cell_type_names <- colnames(se_activity_scaled)[max_cell_type]
+max_z_scores <- apply(se_activity_scaled, 1, max)
+
+# 创建不含重复项的数据框
+z_score_specificity_df <- data.frame(
+  se_id = rownames(se_activity_scaled),
+  cell_type = max_cell_type_names,
+  z_score = max_z_scores,
+  stringsAsFactors = FALSE
+)
+
+# 设置Z-score阈值为0.1
+z_score_threshold <- 0.1
+
+# 筛选出Z-score超过阈值的SE
+filtered_specificity_df <- z_score_specificity_df[z_score_specificity_df$z_score >= z_score_threshold, ]
+
+# 按细胞类型和Z-score排序
+filtered_specificity_df <- filtered_specificity_df[order(filtered_specificity_df$cell_type, -filtered_specificity_df$z_score), ]
+
+# 保存特异性分析结果
+write.csv(filtered_specificity_df, "SE_cell_type_specificity_z0.1.csv")
+
+
+
+# 创建与scRNA-seq相似风格的SE活性热图
+print("创建与scRNA-seq相似风格的SE活性热图...")
+
+# 1. 确定要使用的细胞类型
+all_cell_types <- c("Macrophages", "CD4_CD8_T_cells", "B_cells", 
+                    "Neutrophils", "NK_cells", "Plasma_cells", 
+                    "Epithelial_cells", "Fibroblasts", "Endothelial_cells")
+available_cell_types <- intersect(all_cell_types, unique(filtered_specificity_df$cell_type))
+
+# 2. 获取所有特异性SE，并按细胞类型分组
+se_by_celltype <- list()
+for (ct in available_cell_types) {
+  se_by_celltype[[ct]] <- filtered_specificity_df$se_id[filtered_specificity_df$cell_type == ct]
+}
+
+# 3. 排序细胞类型
+cell_order <- c(
+  "Macrophages", "CD4_CD8_T_cells", "B_cells", 
+  "Neutrophils", "NK_cells", "Plasma_cells", 
+  "Epithelial_cells", "Fibroblasts", "Endothelial_cells"
+)
+cell_order <- intersect(cell_order, available_cell_types)
+
+# 4. 准备SE列表 - 先特异性SE，按Z-score排序
+all_ses_ordered <- c()
+for (ct in cell_order) {
+  if (length(se_by_celltype[[ct]]) > 0) {
+    # 获取该细胞类型的特异性SE
+    ct_ses <- se_by_celltype[[ct]]
+    # 按Z-score排序
+    z_scores <- filtered_specificity_df$z_score[match(ct_ses, filtered_specificity_df$se_id)]
+    ct_ses_ordered <- ct_ses[order(-z_scores)]
+    all_ses_ordered <- c(all_ses_ordered, ct_ses_ordered)
+  }
+}
+
+# 5. 创建注释
+se_annotation <- data.frame(
+  cell_type = filtered_specificity_df$cell_type[match(all_ses_ordered, filtered_specificity_df$se_id)],
+  row.names = all_ses_ordered
+)
+
+# 6. 获取转置的数据 - 细胞类型在行，SE在列
+transposed_data <- t(se_activity_scaled[all_ses_ordered, cell_order])
+
+# 7. 应用类似的定量归一化
+# 计算数据的分位数
+quantiles <- quantile(as.vector(transposed_data), probs = c(0, 0.5, 0.75, 0.9, 0.95, 0.99, 1))
+print("数据分位数:")
+print(quantiles)
+
+# 设置上限为99%分位数
+max_value <- quantiles["99%"]
+adjusted_data <- transposed_data
+adjusted_data[adjusted_data > max_value] <- max_value
+min_value <- quantiles["0%"]
+if (min_value < -max_value) min_value <- -max_value  # 保持对称性
+
+# 8. 为细胞类型设置自定义颜色方案
+cell_colors <- c(
+  "Macrophages" = "#c57fa1",      # 粉紫色
+  "CD4_CD8_T_cells" = "#8ca6af",  # 灰蓝色
+  "B_cells" = "#925e53",          # 棕色
+  "Neutrophils" = "#c9bc8e",      # 米黄色
+  "NK_cells" = "#a2c0e0",         # 浅蓝色
+  "Plasma_cells" = "#b4a5c4",     # 淡紫色
+  "Epithelial_cells" = "#38a6b3", # 青色
+  "Fibroblasts" = "#69a78d",      # 绿色
+  "Endothelial_cells" = "#da966a" # 橙色
+)
+
+annotation_colors <- list(cell_type = cell_colors)
+
+# 9. 列注释 - 标识每个SE属于哪个细胞类型
+col_annotation <- data.frame(
+  cell_type = se_annotation$cell_type,
+  row.names = colnames(adjusted_data)
+)
+
+# 10. 绘制热图
+library(viridis)  # 获取inferno色板
+
+png("SE_CellTypes_Horizontal_Style.png", width = 4000, height = 1200, res = 300)
+pheatmap(
+  adjusted_data,
+  color = inferno(100),  # 使用inferno颜色方案（黑到黄）
+  cluster_rows = FALSE,  # 不进行行聚类
+  cluster_cols = FALSE,  # 不进行列聚类
+  show_rownames = TRUE,  # 显示行名（细胞类型）
+  show_colnames = FALSE, # 不显示列名（SE名，太多）
+  fontsize_row = 12,
+  main = "Cell Type Specific Super Enhancer Activity",
+  border_color = NA,
+  annotation_col = col_annotation,  # 添加列注释
+  annotation_colors = annotation_colors,  # 使用自定义颜色
+  annotation_legend = TRUE,
+  annotation_names_col = FALSE,  # 隐藏注释名称
+  breaks = seq(min_value, max_value, length.out = 100)  # 自定义颜色刻度
+)
+dev.off()
+
+# 11. 创建PDF版本
+pdf("SE_CellTypes_Horizontal_Style.pdf", width = 20, height = 8)
+pheatmap(
+  adjusted_data,
+  color = inferno(100),
+  cluster_rows = FALSE,
+  cluster_cols = FALSE,
+  show_rownames = TRUE,
+  show_colnames = FALSE,
+  fontsize_row = 12,
+  main = "Cell Type Specific Super Enhancer Activity",
+  border_color = NA,
+  annotation_col = col_annotation,
+  annotation_colors = annotation_colors,
+  annotation_legend = TRUE,
+  annotation_names_col = FALSE,
+  breaks = seq(min_value, max_value, length.out = 100)
+)
+dev.off()
+
+
+
+
+
+
+
+3. 分析结果汇总
+数据概览
+
+Seurat对象：包含34,310个细胞，259,795个特征
+细胞类型：9种细胞类型 (Macrophages, CD4_CD8_T_cells, B_cells, Neutrophils, NK_cells, Plasma_cells, Epithelial_cells, Fibroblasts, Endothelial_cells)
+超级增强子：共2,422个SE
+
+特异性分析结果 (Z-score ≥ 0.1)
+
+CD4_CD8_T_cells: 170个特异性SE
+Epithelial_cells:1 73个特异性SE
+Fibroblasts: 252个特异性SE
+Neutrophils: 191个特异性SE
+NK_cells: 1,719个特异性SE
+Plasma_cells: 17个特异性SE
+
+主要发现
+
+NK细胞：拥有最多的特异性SE (1,719个)，表明NK细胞具有非常独特的染色质开放模式
+特异性差异：部分细胞类型(如巨噬细胞、B细胞和内皮细胞)在Z-score标准下没有显示出特异性SE，这可能是由于：
+
+它们的染色质开放模式与其他细胞类型相似
+这些细胞类型的整体信号较弱
+Z-score标准化可能偏向信号强的细胞类型
+
+
+
+数据分布
+
+特异性SE活性分布不均衡，NK细胞占主导
+即使使用较低的Z-score阈值(0.1)，一些细胞类型仍没有特异性SE
+
+
+
+超级增强子(SE)活性计算方法
+以下是我们使用的超级增强子活性计算方法：
+方法概述
+我们通过直接计算落在每个超级增强子区域内的scATAC-seq片段数量来衡量其活性。这种方法提供了染色质可及性的直接测量，避免了使用基因表达或其他间接指标作为代理。
+详细步骤
+
+准备SE坐标数据：
+
+从SE表格文件中加载SE的基因组坐标
+将染色体名称格式调整为与scATAC-seq数据一致（去除"chr"前缀）
+创建GRanges对象存储SE信息
+
+
+计算每种细胞类型中的SE活性：
+
+对于每种细胞类型，获取属于该类型的所有细胞
+使用Signac的FeatureMatrix函数计算SE区域内的片段数
+计算该细胞类型中SE区域的平均片段数（总片段数除以细胞数）
+
+
+数据归一化：
+
+大小归一化：由于SE区域大小不同，将活性除以SE长度（每千碱基）
+Z-score标准化：对每种细胞类型的SE活性进行Z-score计算，突显细胞类型间的相对差异
+
+
+识别细胞类型特异性SE：
+
+对每个SE，确定Z-score最高的细胞类型
+设置Z-score阈值（0.1）筛选特异性SE
+
+
+可视化：
+
+将SE按照细胞类型分组并按Z-score排序
+创建热图展示SE在不同细胞类型中的活性模式
+
+
+
+技术细节
+
+批处理：为避免内存问题，每次处理最多1000个细胞
+并行计算：使用doParallel和foreach包并行处理不同的细胞类型
+数据过滤：通过Z-score阈值(0.1)筛选特异性SE
+数据调整：使用99%分位数作为上限，防止极端值影响可视化效果
+
+这种方法允许我们直接测量每个超级增强子区域在不同细胞类型中的活性，并识别细胞类型特异性的超级增强子，为后续功能分析和基因调控网络构建提供基础
+
+
+
+
+超级增强子活性计算方法详解
+计算每种细胞类型中的SE活性
+这一步是整个分析的核心，涉及从原始scATAC-seq片段数据到超级增强子活性的转换。以下是详细的过程：
+1. 获取特定细胞类型的细胞
+rcells_in_type <- WhichCells(obj_relinked, idents = ct)
+这一步使用Seurat的WhichCells函数，基于之前设置的seurat_clusters标识符（包含细胞类型注释），筛选出特定细胞类型的所有细胞条码。例如，获取所有标记为"NK_cells"的细胞。
+2. 批量处理以避免内存溢出
+rcell_batches <- split(cells_in_type, ceiling(seq_along(cells_in_type)/1000))
+由于某些细胞类型（如NK_cells）可能包含数千个细胞，一次性计算所有细胞会导致内存溢出。因此，我们将细胞分成每批最多1000个的批次进行处理。
+3. 使用FeatureMatrix计算片段数
+rcounts_batch <- FeatureMatrix(
+  fragments = obj_relinked@assays$ATAC@fragments,
+  features = se_ranges,
+  cells = batch
+)
+FeatureMatrix函数是Signac包的核心功能，它：
+
+从片段文件中提取片段信息：fragments参数指向Seurat对象中存储的片段文件路径
+查找与features（即SE区域）重叠的所有片段
+仅考虑指定cells（批次中的细胞）的片段
+返回一个稀疏矩阵，行是SE，列是细胞，矩阵值是每个细胞在每个SE区域内的片段数
+
+这个过程实际上在基因组层面执行了区域重叠计算，从染色质可及性片段到区域计数的转换。
+4. 累积计数并计算平均活性
+rcounts_sum <- counts_sum + rowSums(counts_batch)
+对于每个批次，我们计算每个SE区域的总片段数（跨该批次所有细胞），并累加到总计数中。
+ractivity <- counts_sum / length(cells_in_type)
+最后，将每个SE区域的总片段数除以该细胞类型的总细胞数，得到平均每个细胞在每个SE区域的片段数，这就是我们定义的"SE活性"。
+
+
+
+####绘图代码 整理
+### 数据整理
+####################################超级增强子坐标提取###############################
+# 加载必要的库
+library(GenomicRanges)
+
+# 获取超级增强子坐标
+se_to_gene_file <- "Mhp_SuperEnhancers_ENHANCER_TO_GENE.txt"
+se_data <- read.table(se_to_gene_file, header=FALSE, sep="\t", 
+                     skip=1, stringsAsFactors=FALSE, comment.char="", quote="")
+
+# 提取坐标信息
+se_coords <- data.frame(
+  chr = se_data[[2]],
+  start = as.numeric(se_data[[3]]),
+  end = as.numeric(se_data[[4]]),
+  name = se_data[[1]],
+  stringsAsFactors = FALSE
+)
+
+# 创建GenomicRanges对象
+se_ranges <- GRanges(
+  seqnames = se_coords$chr,
+  ranges = IRanges(start = se_coords$start, end = se_coords$end),
+  name = se_coords$name
+)
+
+# 移除"chr"前缀以匹配片段文件中的染色体命名
+seqlevels(se_ranges) <- gsub("chr", "", seqlevels(se_ranges))
+
+# 计算超级增强子区域的总大小和基因组比例
+total_se_length <- sum(width(se_ranges))
+genome_size <- 2.7e9  # 猪基因组大小约为2.7×10^9 bp
+se_fraction <- total_se_length / genome_size
+
+print(paste0("超级增强子总数: ", length(se_ranges)))
+print(paste0("超级增强子总长度: ", total_se_length, " bp"))
+print(paste0("平均长度: ", round(total_se_length/length(se_ranges)), " bp"))
+print(paste0("超级增强子占基因组比例: ", se_fraction))
+
+# 保存超级增强子坐标，供后续使用
+saveRDS(se_ranges, "se_ranges_fixed.rds")
+
+###################################SE激活分数计算代码##############################
+# 加载必要的库
+library(Signac)
+library(Seurat)
+library(GenomicRanges)
+
+# 加载超级增强子坐标
+se_ranges <- readRDS("se_ranges_fixed.rds")
+
+# 加载ATAC-seq对象
+load("daa52225-obj-relinked-final.Rda")  # 加载为obj_relinked
+
+# 设置默认assay为ATAC
+DefaultAssay(obj_relinked) <- "ATAC"
+
+# 获取片段文件
+fragments <- Fragments(obj_relinked)
+
+# 计算落在SE区域内的片段数
+se_counts <- FeatureMatrix(
+  fragments = fragments,
+  features = se_ranges,
+  cells = colnames(obj_relinked)
+)
+
+# 计算每个细胞的总片段数
+cell_totals <- obj_relinked$peak_region_fragments
+
+# 计算超级增强子激活分数
+se_score <- colSums(se_counts) / cell_totals * 10000
+
+# 截断异常值
+upper_limit <- quantile(se_score, 0.995)  # 使用99.5%分位数作为上限
+se_score_capped <- pmin(se_score, upper_limit)
+
+# 将分数添加到对象元数据
+obj_relinked$SE_activation_score <- se_score_capped
+
+# 创建感染状态列
+obj_relinked$infection <- ifelse(grepl("^Mhp", obj_relinked$orig.ident), "Infected", "Control")
+
+# 准备绘图数据
+plot_data <- data.frame(
+  Cell = colnames(obj_relinked),
+  SE_score = se_score_capped,
+  CellType = obj_relinked$seurat_clusters,
+  Infection = obj_relinked$infection,
+  stringsAsFactors = FALSE
+)
+
+# 统计检验
+cell_types <- unique(plot_data$CellType)
+results <- data.frame(
+  CellType = character(),
+  pvalue = numeric(),
+  Control_mean = numeric(),
+  Infected_mean = numeric(),
+  FoldChange = numeric(),
+  stringsAsFactors = FALSE
+)
+
+for(ct in cell_types) {
+  # 提取该细胞类型的数据
+  ct_data <- plot_data[plot_data$CellType == ct, ]
+  
+  # 执行Wilcoxon检验
+  test <- wilcox.test(SE_score ~ Infection, data = ct_data)
+  
+  # 计算均值和倍数变化
+  control_mean <- mean(ct_data$SE_score[ct_data$Infection == "Control"])
+  infected_mean <- mean(ct_data$SE_score[ct_data$Infection == "Infected"])
+  fold_change <- infected_mean / control_mean
+  
+  # 添加到结果表
+  results <- rbind(results, data.frame(
+    CellType = ct,
+    pvalue = test$p.value,
+    Control_mean = control_mean,
+    Infected_mean = infected_mean,
+    FoldChange = fold_change
+  ))
+}
+
+# 多重检验校正
+results$adj_pvalue <- p.adjust(results$pvalue, method = "BH")
+
+# 保存结果
+saveRDS(plot_data, "se_activation_plot_data.rds")
+write.csv(results, "se_activation_stats.csv", row.names = FALSE)
+
+
+
+
+
+###################################SE感染组对照组小提琴图绘制##############################
+# 加载必要的库
+library(ggplot2)
+library(dplyr)
+library(cowplot)
+
+# 加载绘图数据
+plot_data <- readRDS("se_activation_plot_data.rds")
+
+# 加载统计结果
+stats <- read.csv("se_activation_stats.csv")
+
+# 按倍数变化排序细胞类型
+stats_ordered <- stats[order(-stats$FoldChange), ]
+cell_type_order <- stats_ordered$CellType
+
+# 将CellType转换为因子并设置顺序
+plot_data$CellType <- factor(plot_data$CellType, levels = cell_type_order)
+
+# 美化细胞类型名称 - 将下划线替换为空格
+levels(plot_data$CellType) <- gsub("_", " ", levels(plot_data$CellType))
+
+# 为显著性标记创建标签
+stats_ordered$significance <- ifelse(stats_ordered$adj_pvalue < 0.001, "***",
+                              ifelse(stats_ordered$adj_pvalue < 0.01, "**",
+                              ifelse(stats_ordered$adj_pvalue < 0.05, "*", "ns")))
+
+# Nature风格的配色方案
+nature_colors <- c("Control" = "#4472C4", "Infected" = "#C00000")
+
+# 创建Nature风格的小提琴图
+p1 <- ggplot(plot_data, aes(x = CellType, y = SE_score, fill = Infection)) +
+  geom_violin(position = position_dodge(width = 0.85), scale = "width", alpha = 0.8, 
+              color = NA, trim = TRUE) +
+  geom_boxplot(width = 0.15, position = position_dodge(width = 0.85), 
+               outlier.shape = NA, alpha = 1, fill = "white", color = "black", 
+               fatten = 1.2) +
+  scale_fill_manual(values = nature_colors) +
+  # 修改y轴刻度和格式
+  scale_y_continuous(
+    limits = c(2500, 18000),
+    breaks = seq(0, 18000, 6000),
+    labels = function(x) {
+      # 将数值转换为科学计数法格式 (×10³)
+      ifelse(x == 0, "0", paste0(x/1000, " × 10³"))
+    },
+    expand = c(0.01, 0)
+  ) +
+  labs(
+    title = "",
+    y = "SE activation score (per 10,000 fragments)",
+    x = ""
+  ) +
+  theme_classic(base_size = 12) +
+  theme(
+    plot.margin = margin(0.5, 0.5, 0.5, 0.5, "cm"),
+    panel.grid.major.y = element_line(color = "grey90", linewidth = 0.3),
+    panel.grid.major.x = element_blank(),
+    panel.grid.minor = element_blank(),
+    axis.text.x = element_text(angle = 45, hjust = 1, size = 10, color = "black"),
+    axis.text.y = element_text(size = 10, color = "black"),
+    axis.title = element_text(size = 11, color = "black"),
+    axis.ticks = element_line(linewidth = 0.4, color = "black"),
+    legend.position = "top",
+    legend.title = element_blank(),
+    legend.text = element_text(size = 10),
+    legend.margin = margin(0, 0, 0, 0),
+    legend.box.margin = margin(-10, 0, -5, 0)
+  )
+
+# 添加显著性标记数据 - 注意更新了y位置值
+annot_data <- data.frame(
+  CellType = factor(gsub("_", " ", stats_ordered$CellType), levels = levels(plot_data$CellType)),
+  y = rep(17500, nrow(stats_ordered)), # 已更新为适应新的y轴范围
+  label = stats_ordered$significance
+)
+
+# 添加显著性注释
+p1 <- p1 + 
+  geom_text(data = annot_data, aes(x = CellType, y = y, label = label), 
+            inherit.aes = FALSE, size = 4.5)
+
+# 倍数变化图 - Nature风格
+stats_ordered$CellType <- factor(gsub("_", " ", stats_ordered$CellType), 
+                                levels = levels(plot_data$CellType))
+
+p2 <- ggplot(stats_ordered, aes(x = CellType, y = FoldChange, fill = FoldChange > 1)) +
+  geom_bar(stat = "identity", width = 0.7, color = "black", linewidth = 0.3) +
+  geom_hline(yintercept = 1, linetype = "dashed", color = "black", linewidth = 0.4) +
+  geom_text(aes(label = sprintf("%.2f", FoldChange)), vjust = -0.5, size = 3.2) +
+  scale_fill_manual(values = c("FALSE" = "#4472C4", "TRUE" = "#C00000"), guide = "none") +
+  scale_y_continuous(limits = c(0, max(stats_ordered$FoldChange) * 1.15),
+                    expand = c(0.01, 0)) +
+  labs(
+    title = "",
+    y = "Fold change (Infected/Control)",
+    x = ""
+  ) +
+  theme_classic(base_size = 12) +
+  theme(
+    plot.margin = margin(0.5, 0.5, 0.5, 0.5, "cm"),
+    panel.grid.major.y = element_line(color = "grey90", linewidth = 0.3),
+    panel.grid.major.x = element_blank(),
+    panel.grid.minor = element_blank(),
+    axis.text.x = element_text(angle = 45, hjust = 1, size = 10, color = "black"),
+    axis.text.y = element_text(size = 10, color = "black"),
+    axis.title = element_text(size = 11),
+    axis.ticks = element_line(linewidth = 0.4)
+  )
+
+# 组合两个图到一个面板
+panel <- plot_grid(
+  p1, p2, 
+  labels = c("a", "b"), 
+  ncol = 1, 
+  align = "v", 
+  rel_heights = c(1.4, 1),
+  label_size = 14
+)
+
+# 保存单独的小提琴图
+ggsave("SE_activation_Nature_style.pdf", p1, width = 7.2, height = 5.5, units = "in", dpi = 600)
+ggsave("SE_activation_Nature_style.tiff", p1, width = 7.2, height = 5.5, units = "in", dpi = 600)
+
+# 保存倍数变化图
+ggsave("SE_activation_foldchange_Nature_style.pdf", p2, width = 7.2, height = 4, units = "in", dpi = 600)
+ggsave("SE_activation_foldchange_Nature_style.tiff", p2, width = 7.2, height = 4, units = "in", dpi = 600)
+
+# 保存组合图
+ggsave("SE_activation_panel_Nature_style.pdf", panel, width = 7.2, height = 9, units = "in", dpi = 600)
+ggsave("SE_activation_panel_Nature_style.tiff", panel, width = 7.2, height = 9, units = "in", dpi = 600)
+
+
+#########################################小提琴图烟雨图###############################
+# 首先加载您的数据
+plot_data <- readRDS("se_activation_plot_data.rds")
+
+# 加载必要的库
+library(ggplot2)
+library(dplyr)
+library(introdataviz)
+
+# 设置您指定的精确颜色
+nature_colors <- c("Control" = "#7089c5", "Infected" = "#c95238")
+
+# 创建新文件夹保存结果
+dir.create("raincloud_plots", showWarnings = FALSE)
+
+# 获取所有细胞类型
+all_celltypes <- unique(plot_data$CellType)
+
+# 为每种细胞类型创建单独的图表
+for(cell_type in all_celltypes) {
+  # 过滤数据
+  cell_data <- plot_data %>% filter(CellType == cell_type)
+  
+  # 绘制云雨图
+  rain_height <- .1
+  p <- ggplot(cell_data, aes(x = 1, y = SE_score, fill = Infection)) +
+    # 添加半小提琴图
+    geom_flat_violin(position = position_nudge(x = rain_height+.05), alpha = 0.4, trim = FALSE) +
+    # 添加散点 - 无描边
+    geom_point(aes(color = Infection), position = position_jitter(width = rain_height, height = 0),
+               size = 1, alpha = 0.3, show.legend = FALSE, stroke = 0) +
+    # 添加箱线图
+    geom_boxplot(width = rain_height, alpha = 0.5, show.legend = FALSE, 
+                 outlier.shape = NA, position = position_nudge(x = -rain_height*2)) +
+    # 添加均值和标准误
+    stat_summary(fun.data = mean_se, mapping = aes(color = Infection),
+                 position = position_nudge(x = rain_height*3), show.legend = FALSE) +
+    # 设置坐标轴和主题
+    scale_y_continuous(
+      name = "SE activation score (per 10,000 fragments)",
+      breaks = seq(0, 18000, 6000),
+      labels = function(x) paste0(x/1000, " × 10³"),
+      limits = c(2500, 18000)
+    ) +
+    scale_x_continuous(breaks = NULL) +  # 隐藏x轴刻度
+    scale_fill_manual(values = nature_colors) +
+    scale_color_manual(values = nature_colors) +
+    labs(title = cell_type) +  # 添加细胞类型作为标题
+    theme_minimal() +
+    theme(
+      panel.grid.major = element_blank(),
+      panel.grid.minor = element_blank(),
+      legend.position = "top",
+      legend.title = element_blank(),
+      plot.title = element_text(hjust = 0.5, size = 14),
+      axis.title.x = element_blank()
+    ) +
+    ylab("SE activation score (per 10,000 fragments)")
+  
+  # 保存为PNG (600dpi)
+  png_filename <- paste0("raincloud_plots/", gsub(" ", "_", cell_type), "_raincloud.png")
+  ggsave(png_filename, p, width = 6, height = 5, units = "in", dpi = 600)
+  
+  # 保存为PDF
+  pdf_filename <- paste0("raincloud_plots/", gsub(" ", "_", cell_type), "_raincloud.pdf")
+  ggsave(pdf_filename, p, width = 6, height = 5, units = "in", device = cairo_pdf)
+}
+
+# 创建组合图
+p_all <- ggplot(plot_data, aes(x = 1, y = SE_score, fill = Infection)) +
+  geom_flat_violin(position = position_nudge(x = rain_height+.05), alpha = 0.4, trim = FALSE) +
+  # 点没有描边
+  geom_point(aes(color = Infection), position = position_jitter(width = rain_height, height = 0),
+             size = 0.8, alpha = 0.2, show.legend = FALSE, stroke = 0) +
+  geom_boxplot(width = rain_height, alpha = 0.5, show.legend = FALSE, 
+               outlier.shape = NA, position = position_nudge(x = -rain_height*2)) +
+  stat_summary(fun.data = mean_se, mapping = aes(color = Infection),
+               position = position_nudge(x = rain_height*3), show.legend = FALSE) +
+  scale_y_continuous(
+    name = "SE activation score (per 10,000 fragments)",
+    breaks = seq(0, 18000, 6000),
+    labels = function(x) paste0(x/1000, " × 10³"),
+    limits = c(2500, 18000)
+  ) +
+  scale_x_continuous(breaks = NULL) +
+  scale_fill_manual(values = nature_colors) +
+  scale_color_manual(values = nature_colors) +
+  facet_wrap(~CellType, ncol = 3) +
+  theme_minimal() +
+  theme(
+    panel.grid.major = element_blank(),
+    panel.grid.minor = element_blank(),
+    legend.position = "top",
+    legend.title = element_blank(),
+    strip.text = element_text(size = 12),
+    axis.title.x = element_blank()
+  )
+
+# 保存组合图 (PNG 600dpi)
+ggsave("raincloud_plots/All_cell_types_raincloud.png", p_all, width = 12, height = 10, units = "in", dpi = 600)
+
+# 保存组合图 (PDF)
+ggsave("raincloud_plots/All_cell_types_raincloud.pdf", p_all, width = 12, height = 10, units = "in", device = cairo_pdf)
