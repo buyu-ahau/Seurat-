@@ -1,0 +1,112 @@
+#!/bin/bash
+# ================= 变量设置区域 =================
+# 项目主目录 (请修改此处)
+PROJECT_DIR="/XXX/path/to/your/project"
+# 原始 GFF 文件夹路径
+ORIGINAL_GFF_DIR="${PROJECT_DIR}/gff"
+# 新的 GFF 输出路径 (会自动创建)
+NEW_GFF_DIR="${PROJECT_DIR}/gff/with_chr"
+# ==============================================
+# 1. 创建存放新文件的目录
+if [ ! -d "$NEW_GFF_DIR" ]; then
+    mkdir -p "$NEW_GFF_DIR"
+    echo "已创建目录: $NEW_GFF_DIR"
+fi
+
+# 2. 批量转换
+echo "开始处理 GFF 文件..."
+cd "$ORIGINAL_GFF_DIR"
+
+for file in *.gff; do
+    # 确保只处理文件
+    if [ -f "$file" ]; then
+        echo "正在转换: $file -> with_chr/$file"
+        # 使用 sed 在每一行的行首添加 "chr"
+        sed 's/^/chr/' "$file" > "${NEW_GFF_DIR}/${file}"
+    fi
+done
+echo "GFF 格式化完成！请在后续分析中使用: ${NEW_GFF_DIR}"
+
+
+
+
+#!/bin/bash
+
+# ================= 环境与变量设置 =================
+# 1. 激活 Conda 环境 (根据你的实际环境名修改)
+source ~/.bashrc
+eval "$(conda shell.bash hook)"
+conda activate bw2
+
+# 2. 路径设置 (请修改这里的 XXX)
+# ROSE 软件安装目录
+ROSE_HOME="/XXX/path/to/software/ROSE"
+# 项目主目录
+BASE_DIR="/XXX/path/to/your/project"
+
+# 3. 输入文件路径
+# 注意：这里使用刚才生成的、带 chr 的 GFF 文件夹
+GFF_DIR="${BASE_DIR}/gff/with_chr"
+# 原始 BAM 文件夹
+BAM_DIR="${BASE_DIR}/bam"
+# 结果输出文件夹
+RESULTS_DIR="${BASE_DIR}/results"
+
+# 4. 参考基因组注释文件 (UCSC table 格式)
+# 该文件用于定义基因位置和 TSS 排除区域
+ANNOT_FILE="/XXX/path/to/annotation/GALLUS_refseq.ucsc"
+
+# 5. 设置 Python 环境变量 (确保能调用 ROSE 的库)
+export PYTHONPATH="${ROSE_HOME}/lib:${PYTHONPATH}"
+export PATH="${ROSE_HOME}/bin:${PATH}"
+
+# 6. 定义样本列表
+# 如果有新样本，直接在这里添加名字即可
+SAMPLES=("NB1" "NB2" "NB3" "BR30-1" "BR30-2" "BR30-3")
+# ==================================================
+
+# ================= 主程序循环 =================
+for SAMPLE_ID in "${SAMPLES[@]}"
+do
+    echo "========================================"
+    echo "正在处理样本: ${SAMPLE_ID}"
+    echo "时间: $(date)"
+    echo "========================================"
+
+    # 定义具体文件路径
+    GFF_FILE="${GFF_DIR}/${SAMPLE_ID}.gff"
+    BAM_FILE="${BAM_DIR}/${SAMPLE_ID}.final.bam"
+    OUT_DIR="${RESULTS_DIR}/${SAMPLE_ID}_final"
+    LOG_FILE="${RESULTS_DIR}/${SAMPLE_ID}_run.log"
+
+    # 文件存在性检查
+    if [[ ! -f "$GFF_FILE" ]]; then
+        echo "❌ 跳过: 未找到 GFF 文件 $GFF_FILE"
+        continue
+    fi
+    if [[ ! -f "$BAM_FILE" ]]; then
+        echo "❌ 跳过: 未找到 BAM 文件 $BAM_FILE"
+        continue
+    fi
+
+    # 清理旧结果 (防止报错)
+    if [ -d "$OUT_DIR" ]; then
+        rm -rf "$OUT_DIR"
+    fi
+    mkdir -p "$OUT_DIR"
+
+    # 运行 ROSE
+    # -s: 设定 TSS 排除距离 (默认 2500bp)
+    echo ">>> 正在运行 ROSE 分析..."
+    python "${ROSE_HOME}/bin/ROSE_main.py" \
+        --custom "${ANNOT_FILE}" \
+        -i "$GFF_FILE" \
+        -r "$BAM_FILE" \
+        -o "$OUT_DIR" \
+        -t 2500 > "$LOG_FILE" 2>&1
+
+    echo "✅ 样本 ${SAMPLE_ID} 完成。"
+    echo ""
+done
+
+echo "🎉 所有任务已全部完成！"
