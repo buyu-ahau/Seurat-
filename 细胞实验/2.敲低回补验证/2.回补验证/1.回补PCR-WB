@@ -1,0 +1,93 @@
+library(ggplot2)
+library(ggpubr)
+
+# --- 数据准备 ---
+data_rescue_mrna <- data.frame(
+  Group = rep(c("WT", "SE-KO", "SE-KO+OE", "WT+MHP", "SE-KO+MHP", "SE-KO+OE+MHP"), each = 3),
+  Value = c(2.442, 2.677, 2.127, 
+            0.635, 0.472, 0.391, 
+            2.731, 2.154, 2.998, 
+            4.147, 4.986, 4.258, 
+            1.802, 1.498, 1.198, 
+            3.384, 2.917, 3.150)
+)
+data_rescue_mrna$Group <- factor(data_rescue_mrna$Group, levels = c("WT", "SE-KO", "SE-KO+OE", "WT+MHP", "SE-KO+MHP", "SE-KO+OE+MHP"))
+
+# --- 配色 ---
+color_palette_rescue <- c("#444444", "#444444", "#444444", "#a30001", "#a30001", "#a30001")
+shape_palette_rescue <- c(16, 16, 16, 15, 15, 15)
+
+# --- 绘图 ---
+p_rescue_mrna <- ggplot(data_rescue_mrna, aes(x = Group, y = Value, color = Group, shape = Group)) +
+  geom_bar(stat = "summary", fun = "mean", fill = "white", linewidth = 0.8, width = 0.4) +
+  geom_errorbar(stat = "summary", fun.data = "mean_sd", width = 0.15, linewidth = 0.8, position = position_dodge(0.6)) +
+  geom_jitter(width = 0.08, size = 2.5, alpha = 1) +
+  
+  stat_compare_means(comparisons = list(c("WT", "SE-KO"), c("WT", "WT+MHP"), c("WT+MHP", "SE-KO+MHP"), c("SE-KO+MHP", "SE-KO+OE+MHP")),
+                     method = "t.test", label = "p.signif", hide.ns = TRUE, color = "black", size = 5, 
+                     label.y = c(3.0, 5.2, 5.2, 3.8)) + 
+  
+  scale_color_manual(values = color_palette_rescue) +
+  scale_shape_manual(values = shape_palette_rescue) +
+  labs(x = NULL, y = "Relative mRNA Expression") +
+  
+  theme_classic() +
+  theme(
+    axis.text.x = element_text(size = 11, color = "black", angle = 45, hjust = 1, face = "bold"),
+    axis.text.y = element_text(size = 12, color = "black", face = "bold"),
+    axis.title.y = element_text(size = 14, face = "bold", color = "black"),
+    axis.ticks = element_line(color = "black", linewidth = 0.8), axis.ticks.length = unit(0.15, "cm"),
+    axis.line = element_line(color = "black", linewidth = 0.8),
+    panel.border = element_blank(), legend.position = "none", plot.margin = unit(c(0.5, 0.5, 0.5, 0.5), "cm")
+  ) +
+  scale_y_continuous(expand = c(0, 0), limits = c(0, 6))
+
+ggsave("Fig4_Rescue_mRNA.pdf", p_rescue_mrna, width = 3.8, height = 4)
+
+
+
+library(ggplot2)
+library(ggpubr)
+
+# --- 数据准备 ---
+data_rescue_wb <- data.frame(
+  Group = rep(c("WT", "SE-KO", "SE-KO+OE", "WT+MHP", "SE-KO+MHP", "SE-KO+OE+MHP"), each = 3),
+  Value = c(0.8807, 0.7474, 0.7092, 
+            0.5630, 0.4758, 0.5871, 
+            0.8977, 1.0291, 0.9009, 
+            1.0764, 0.8195, 0.8707, 
+            0.6467, 0.3568, 0.4768, 
+            0.9607, 0.5944, 0.6628)
+)
+data_rescue_wb$Group <- factor(data_rescue_wb$Group, levels = c("WT", "SE-KO", "SE-KO+OE", "WT+MHP", "SE-KO+MHP", "SE-KO+OE+MHP"))
+
+# --- 配色 ---
+color_palette_rescue <- c("#444444", "#444444", "#444444", "#a30001", "#a30001", "#a30001")
+shape_palette_rescue <- c(16, 16, 16, 15, 15, 15)
+
+# --- 绘图 ---
+p_rescue_wb <- ggplot(data_rescue_wb, aes(x = Group, y = Value, color = Group, shape = Group)) +
+  geom_bar(stat = "summary", fun = "mean", fill = "white", linewidth = 0.8, width = 0.4) +
+  geom_errorbar(stat = "summary", fun.data = "mean_sd", width = 0.15, linewidth = 0.8, position = position_dodge(0.6)) +
+  geom_jitter(width = 0.08, size = 2.5, alpha = 1) +
+  
+  stat_compare_means(comparisons = list(c("WT", "SE-KO"), c("WT", "WT+MHP"), c("WT+MHP", "SE-KO+MHP"), c("SE-KO+MHP", "SE-KO+OE+MHP")),
+                     method = "t.test", label = "p.signif", hide.ns = TRUE, color = "black", size = 5, 
+                     label.y = c(1.0, 1.25, 1.35, 1.1)) +
+  
+  scale_color_manual(values = color_palette_rescue) +
+  scale_shape_manual(values = shape_palette_rescue) +
+  labs(x = NULL, y = "Relative Protein Level\n(BHLHE40 / Actin)") +
+  
+  theme_classic() +
+  theme(
+    axis.text.x = element_text(size = 11, color = "black", angle = 45, hjust = 1, face = "bold"),
+    axis.text.y = element_text(size = 12, color = "black", face = "bold"),
+    axis.title.y = element_text(size = 12, face = "bold", color = "black"),
+    axis.ticks = element_line(color = "black", linewidth = 0.8), axis.ticks.length = unit(0.15, "cm"),
+    axis.line = element_line(color = "black", linewidth = 0.8),
+    panel.border = element_blank(), legend.position = "none", plot.margin = unit(c(0.5, 0.5, 0.5, 0.5), "cm")
+  ) +
+  scale_y_continuous(expand = c(0, 0), limits = c(0, 1.5))
+
+ggsave("Fig5_Rescue_Protein.pdf", p_rescue_wb, width = 3.8, height = 4)

@@ -1,0 +1,44 @@
+library(ggplot2)
+library(ggpubr)
+
+# --- 数据准备 ---
+data_wb_kd <- data.frame(
+  Group = rep(c("Mock", "NC", "CRISPRi-1", "CRISPRi-2", "CRISPRi-3"), each = 3),
+  Value = c(0.967, 0.819, 1.025, 
+            1.088, 0.910, 1.002, 
+            0.191, 0.149, 0.282, 
+            0.293, 0.275, 0.530, 
+            0.407, 0.515, 0.647)
+)
+data_wb_kd$Group <- factor(data_wb_kd$Group, levels = c("Mock", "NC", "CRISPRi-1", "CRISPRi-2", "CRISPRi-3"))
+
+# --- 配色 ---
+color_palette_kd <- c("#666666", "black", "#a30001", "#a30001", "#a30001")
+shape_palette_kd <- c(16, 16, 15, 15, 15)
+
+# --- 绘图 ---
+p_wb_kd <- ggplot(data_wb_kd, aes(x = Group, y = Value, color = Group, shape = Group)) +
+  geom_bar(stat = "summary", fun = "mean", fill = "white", linewidth = 0.8, width = 0.45) +
+  geom_errorbar(stat = "summary", fun.data = "mean_sd", width = 0.15, linewidth = 0.8, position = position_dodge(0.6)) +
+  geom_jitter(width = 0.1, size = 2.0, alpha = 0.8) +
+  
+  stat_compare_means(comparisons = list(c("NC","CRISPRi-1"), c("NC","CRISPRi-2"), c("NC","CRISPRi-3")), 
+                     method = "t.test", label = "p.signif", hide.ns = TRUE, color = "black", size = 5, 
+                     label.y = c(1.15, 1.25, 1.35)) +
+  
+  scale_color_manual(values = color_palette_kd) +
+  scale_shape_manual(values = shape_palette_kd) +
+  labs(x = NULL, y = "Relative Protein Level\n(BHLHE40 / GAPDH)") +
+  
+  theme_classic() +
+  theme(
+    axis.text.x = element_text(size = 11, color = "black", angle = 45, hjust = 1, face = "bold"),
+    axis.text.y = element_text(size = 12, color = "black", face = "bold"),
+    axis.title.y = element_text(size = 11, face = "bold", color = "black"),
+    axis.ticks = element_line(color = "black", linewidth = 0.8), axis.ticks.length = unit(0.15, "cm"),
+    axis.line = element_line(color = "black", linewidth = 0.8),
+    panel.border = element_blank(), legend.position = "none", plot.margin = unit(c(0.2, 0.2, 0.2, 0.2), "cm")
+  ) +
+  scale_y_continuous(expand = c(0, 0), limits = c(0, 1.5), breaks = c(0, 0.5, 1.0, 1.5))
+
+ggsave("Fig3_WB_Quantification.pdf", p_wb_kd, width = 2.8, height = 4)

@@ -1,0 +1,44 @@
+library(ggplot2)
+library(ggpubr)
+
+# --- 数据准备 ---
+data_luc <- data.frame(
+  Group = rep(c("Vector", "Enhancer1", "Enhancer2", "Enhancer3", "Enhancer4"), each = 3),
+  Value = c(0.8246, 1.0098, 1.1655, 
+            1.1058, 1.1795, 1.0583, 
+            3.7505, 4.0784, 4.3423, 
+            1.3878, 1.3973, 1.3513, 
+            1.1855, 0.9623, 1.1185)
+)
+data_luc$Group <- factor(data_luc$Group, levels = c("Vector", "Enhancer1", "Enhancer2", "Enhancer3", "Enhancer4"))
+
+# --- 配色 ---
+color_palette_deep <- c("black", "#666666", "#a30001", "#666666", "#666666")
+shape_palette_deep <- c(16, 16, 15, 16, 16)
+
+# --- 绘图 ---
+p_luc <- ggplot(data_luc, aes(x = Group, y = Value, color = Group, shape = Group)) +
+  geom_bar(stat = "summary", fun = "mean", fill = "white", linewidth = 0.8, width = 0.5) +
+  geom_errorbar(stat = "summary", fun.data = "mean_sd", width = 0.2, linewidth = 0.8, position = position_dodge(0.6)) +
+  geom_jitter(width = 0.1, size = 2.5, alpha = 1) +
+  
+  stat_compare_means(method = "t.test", ref.group = "Vector", 
+                     label = "p.signif", label.y = c(1.5, 1.5, 4.6, 1.8, 1.5), 
+                     hide.ns = TRUE, color = "black", size = 5) +
+  
+  scale_color_manual(values = color_palette_deep) +
+  scale_shape_manual(values = shape_palette_deep) +
+  labs(x = NULL, y = "Relative Luciferase Activity") +
+  
+  theme_classic() + 
+  theme(
+    axis.text.x = element_text(size = 12, color = "black", angle = 45, hjust = 1, face = "bold"),
+    axis.text.y = element_text(size = 12, color = "black", face = "bold"),
+    axis.title.y = element_text(size = 14, face = "bold", color = "black"),
+    axis.ticks = element_line(color = "black", linewidth = 0.8), axis.ticks.length = unit(0.15, "cm"), 
+    axis.line = element_line(color = "black", linewidth = 0.8), 
+    panel.border = element_blank(), legend.position = "none", plot.margin = unit(c(0.5, 0.5, 0.5, 0.5), "cm")
+  ) +
+  scale_y_continuous(expand = c(0, 0), limits = c(0, 5))
+
+ggsave("Fig1_Luciferase.pdf", p_luc, width = 3.5, height = 4)

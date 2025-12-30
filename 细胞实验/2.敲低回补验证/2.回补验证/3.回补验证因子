@@ -1,0 +1,131 @@
+###IL6###
+library(ggplot2)
+library(ggpubr)
+
+data_il1b <- data.frame(
+  Group = rep(c("WT", "SE-KO", "SE-KO+OE", "WT+MHP", "SE-KO+MHP", "SE-KO+OE+MHP"), each = 6),
+  Value = c(78.02, 70.91, 81.96, 74.86, 83.54, 72.49, 
+            79.60, 69.33, 76.44, 75.65, 81.17, 70.12, 
+            78.81, 77.23, 71.70, 82.75, 74.07, 73.28, 
+            239.86, 205.13, 250.92, 217.76, 261.18, 228.02, 
+            50.38, 47.23, 51.96, 48.80, 51.17, 48.02, 
+            246.97, 211.44, 257.23, 224.86, 235.92, 197.23)
+)
+data_il1b$Group <- factor(data_il1b$Group, levels = c("WT", "SE-KO", "SE-KO+OE", "WT+MHP", "SE-KO+MHP", "SE-KO+OE+MHP"))
+color_palette_rescue <- c("#444444", "#444444", "#444444", "#a30001", "#a30001", "#a30001")
+shape_palette_rescue <- c(16, 16, 16, 15, 15, 15)
+
+p_il1b <- ggplot(data_il1b, aes(x = Group, y = Value, color = Group, shape = Group)) +
+  geom_bar(stat = "summary", fun = "mean", fill = "white", linewidth = 0.8, width = 0.4) +
+  geom_errorbar(stat = "summary", fun.data = "mean_sd", width = 0.15, linewidth = 0.8, position = position_dodge(0.6)) +
+  geom_jitter(width = 0.12, size = 2.0, alpha = 0.8) +
+  
+  stat_compare_means(comparisons = list(c("WT", "WT+MHP"), c("WT+MHP", "SE-KO+MHP"), c("SE-KO+MHP", "SE-KO+OE+MHP")),
+                     method = "t.test", label = "p.signif", hide.ns = TRUE, color = "black", size = 5, label.y = c(290, 310, 320)) +
+  
+  scale_color_manual(values = color_palette_rescue) + scale_shape_manual(values = shape_palette_rescue) +
+  labs(x = NULL, y = "IL-1β Concentration (pg/ml)") +
+  
+  theme_classic() +
+  theme(
+    axis.text.x = element_text(size = 11, color = "black", angle = 45, hjust = 1, face = "bold"),
+    axis.text.y = element_text(size = 12, color = "black", face = "bold"),
+    axis.title.y = element_text(size = 11, face = "bold", color = "black"),
+    axis.ticks = element_line(color = "black", linewidth = 0.8), axis.ticks.length = unit(0.15, "cm"),
+    axis.line = element_line(color = "black", linewidth = 0.8),
+    panel.border = element_blank(), legend.position = "none", plot.margin = unit(c(0.5, 0.5, 0.5, 0.5), "cm")
+  ) +
+  scale_y_continuous(expand = c(0, 0), limits = c(0, 350), breaks = c(0, 100, 200, 300, 350))
+
+ggsave("Fig7_IL1b.pdf", p_il1b, width = 3.8, height = 4)
+
+
+
+
+###IL8###
+
+library(ggplot2)
+library(ggpubr)
+
+data_il8 <- data.frame(
+  Group = rep(c("WT", "SE-KO", "SE-KO+OE", "WT+MHP", "SE-KO+MHP", "SE-KO+OE+MHP"), each = 6),
+  Value = c(81.96, 78.81, 83.54, 80.38, 82.75, 78.02, 
+            81.17, 78.02, 83.54, 79.60, 82.75, 77.23, 
+            81.96, 78.81, 82.75, 80.38, 81.17, 79.60, 
+            492.50, 449.08, 505.93, 461.71, 486.19, 434.08, 
+            49.59, 46.44, 51.96, 48.02, 51.17, 48.80, 
+            539.08, 488.56, 574.61, 478.29, 560.40, 522.50)
+)
+data_il8$Group <- factor(data_il8$Group, levels = c("WT", "SE-KO", "SE-KO+OE", "WT+MHP", "SE-KO+MHP", "SE-KO+OE+MHP"))
+color_palette_rescue <- c("#444444", "#444444", "#444444", "#a30001", "#a30001", "#a30001")
+shape_palette_rescue <- c(16, 16, 16, 15, 15, 15)
+
+p_il8 <- ggplot(data_il8, aes(x = Group, y = Value, color = Group, shape = Group)) +
+  geom_bar(stat = "summary", fun = "mean", fill = "white", linewidth = 0.8, width = 0.4) +
+  geom_errorbar(stat = "summary", fun.data = "mean_sd", width = 0.15, linewidth = 0.8, position = position_dodge(0.6)) +
+  geom_jitter(width = 0.12, size = 2.0, alpha = 0.8) +
+  
+  stat_compare_means(comparisons = list(c("WT", "WT+MHP"), c("WT+MHP", "SE-KO+MHP"), c("SE-KO+MHP", "SE-KO+OE+MHP")),
+                     method = "t.test", label = "p.signif", hide.ns = TRUE, color = "black", size = 5, label.y = c(550, 580, 650)) +
+  
+  scale_color_manual(values = color_palette_rescue) + scale_shape_manual(values = shape_palette_rescue) +
+  labs(x = NULL, y = "IL-8 Concentration (pg/ml)") +
+  
+  theme_classic() +
+  theme(
+    axis.text.x = element_text(size = 11, color = "black", angle = 45, hjust = 1, face = "bold"),
+    axis.text.y = element_text(size = 12, color = "black", face = "bold"),
+    axis.title.y = element_text(size = 11, face = "bold", color = "black"),
+    axis.ticks = element_line(color = "black", linewidth = 0.8), axis.ticks.length = unit(0.15, "cm"),
+    axis.line = element_line(color = "black", linewidth = 0.8),
+    panel.border = element_blank(), legend.position = "none", plot.margin = unit(c(0.5, 0.5, 0.5, 0.5), "cm")
+  ) +
+  scale_y_continuous(expand = c(0, 0), limits = c(0, 700), breaks = seq(0, 700, 100))
+
+ggsave("Fig9_IL8.pdf", p_il8, width = 3.8, height = 4)
+
+
+
+###TNF-α###
+
+library(ggplot2)
+library(ggpubr)
+
+data_tnfa <- data.frame(
+  Group = rep(c("WT", "SE-KO", "SE-KO+OE", "WT+MHP", "SE-KO+MHP", "SE-KO+OE+MHP"), each = 6),
+  Value = c(97.75, 94.60, 99.33, 96.17, 98.54, 93.81, 
+            96.96, 93.81, 99.33, 95.39, 98.54, 93.02, 
+            97.75, 94.60, 98.54, 96.17, 96.96, 95.39, 
+            481.45, 443.55, 516.98, 456.19, 496.45, 470.40, 
+            50.38, 47.23, 51.96, 48.80, 51.17, 48.02, 
+            529.61, 481.45, 567.51, 495.66, 548.56, 512.24)
+)
+data_tnfa$Group <- factor(data_tnfa$Group, levels = c("WT", "SE-KO", "SE-KO+OE", "WT+MHP", "SE-KO+MHP", "SE-KO+OE+MHP"))
+color_palette_rescue <- c("#444444", "#444444", "#444444", "#a30001", "#a30001", "#a30001")
+shape_palette_rescue <- c(16, 16, 16, 15, 15, 15)
+
+p_tnfa <- ggplot(data_tnfa, aes(x = Group, y = Value, color = Group, shape = Group)) +
+  geom_bar(stat = "summary", fun = "mean", fill = "white", linewidth = 0.8, width = 0.4) +
+  geom_errorbar(stat = "summary", fun.data = "mean_sd", width = 0.15, linewidth = 0.8, position = position_dodge(0.6)) +
+  geom_jitter(width = 0.12, size = 2.0, alpha = 0.8) +
+  
+  stat_compare_means(comparisons = list(c("WT", "WT+MHP"), c("WT+MHP", "SE-KO+MHP"), c("SE-KO+MHP", "SE-KO+OE+MHP")),
+                     method = "t.test", label = "p.signif", hide.ns = TRUE, color = "black", size = 5, label.y = c(560, 580, 650)) +
+  
+  scale_color_manual(values = color_palette_rescue) + scale_shape_manual(values = shape_palette_rescue) +
+  labs(x = NULL, y = "TNF-α Concentration (pg/ml)") +
+  
+  theme_classic() +
+  theme(
+    axis.text.x = element_text(size = 11, color = "black", angle = 45, hjust = 1, face = "bold"),
+    axis.text.y = element_text(size = 12, color = "black", face = "bold"),
+    axis.title.y = element_text(size = 11, face = "bold", color = "black"),
+    axis.ticks = element_line(color = "black", linewidth = 0.8), axis.ticks.length = unit(0.15, "cm"),
+    axis.line = element_line(color = "black", linewidth = 0.8),
+    panel.border = element_blank(), legend.position = "none", plot.margin = unit(c(0.5, 0.5, 0.5, 0.5), "cm")
+  ) +
+  scale_y_continuous(expand = c(0, 0), limits = c(0, 700), breaks = seq(0, 700, 100))
+
+ggsave("Fig10_TNFa.pdf", p_tnfa, width = 3.8, height = 4)
+
+

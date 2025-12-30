@@ -1,0 +1,45 @@
+library(ggplot2)
+library(ggpubr)
+
+# --- 数据准备 ---
+data_cck8 <- data.frame(
+  Group = rep(c("WT", "SE-KO", "SE-KO+OE", "WT+MHP", "SE-KO+MHP", "SE-KO+OE+MHP"), each = 6),
+  Value = c(0.658, 0.605, 0.672, 0.749, 0.849, 0.708, 
+            0.201, 0.207, 0.195, 0.208, 0.202, 0.215, 
+            0.764, 0.741, 0.680, 0.770, 0.747, 0.670, 
+            0.532, 0.445, 0.652, 0.551, 0.479, 0.588, 
+            0.287, 0.277, 0.199, 0.243, 0.202, 0.233, 
+            1.132, 1.142, 1.242, 1.343, 1.459, 1.359)
+)
+data_cck8$Value <- data_cck8$Value - 0.088
+data_cck8$Group <- factor(data_cck8$Group, levels = c("WT", "SE-KO", "SE-KO+OE", "WT+MHP", "SE-KO+MHP", "SE-KO+OE+MHP"))
+
+# --- 绘图 ---
+color_palette_rescue <- c("#444444", "#444444", "#444444", "#a30001", "#a30001", "#a30001")
+shape_palette_rescue <- c(16, 16, 16, 15, 15, 15)
+
+p_cck8 <- ggplot(data_cck8, aes(x = Group, y = Value, color = Group, shape = Group)) +
+  geom_bar(stat = "summary", fun = "mean", fill = "white", linewidth = 0.8, width = 0.4) +
+  geom_errorbar(stat = "summary", fun.data = "mean_sd", width = 0.15, linewidth = 0.8, position = position_dodge(0.6)) +
+  geom_jitter(width = 0.12, size = 2.0, alpha = 0.8) +
+  
+  stat_compare_means(comparisons = list(c("WT", "SE-KO"), c("SE-KO", "SE-KO+OE"), c("WT+MHP", "SE-KO+MHP"), c("SE-KO+MHP", "SE-KO+OE+MHP")),
+                     method = "t.test", label = "p.signif", hide.ns = TRUE, color = "black", size = 5, 
+                     label.y = c(0.8, 0.9, 0.7, 1.6)) + 
+  
+  scale_color_manual(values = color_palette_rescue) +
+  scale_shape_manual(values = shape_palette_rescue) +
+  labs(x = NULL, y = "Cell Viability (OD450)") +
+  
+  theme_classic() +
+  theme(
+    axis.text.x = element_text(size = 11, color = "black", angle = 45, hjust = 1, face = "bold"),
+    axis.text.y = element_text(size = 12, color = "black", face = "bold"),
+    axis.title.y = element_text(size = 13, face = "bold", color = "black"),
+    axis.ticks = element_line(color = "black", linewidth = 0.8), axis.ticks.length = unit(0.15, "cm"),
+    axis.line = element_line(color = "black", linewidth = 0.8),
+    panel.border = element_blank(), legend.position = "none", plot.margin = unit(c(0.5, 0.5, 0.5, 0.5), "cm")
+  ) +
+  scale_y_continuous(expand = c(0, 0), limits = c(0, 1.8), breaks = c(0, 0.5, 1.0, 1.5, 1.8))
+
+ggsave("Fig6_CCK8.pdf", p_cck8, width = 3.8, height = 4)
